@@ -1,0 +1,104 @@
+{
+  "count": 14,
+  "imageSize": 28,
+  "samples": [
+    {
+      "index": 0,
+      "sourceTestIndex": 3,
+      "trueLabel": 0,
+      "tag": "typical",
+      "kind": "recorded"
+    },
+    {
+      "index": 1,
+      "sourceTestIndex": 2,
+      "trueLabel": 1,
+      "tag": "typical",
+      "kind": "recorded"
+    },
+    {
+      "index": 2,
+      "sourceTestIndex": 1,
+      "trueLabel": 2,
+      "tag": "typical",
+      "kind": "recorded"
+    },
+    {
+      "index": 3,
+      "sourceTestIndex": 30,
+      "trueLabel": 3,
+      "tag": "typical",
+      "kind": "recorded"
+    },
+    {
+      "index": 4,
+      "sourceTestIndex": 4,
+      "trueLabel": 4,
+      "tag": "typical",
+      "kind": "recorded"
+    },
+    {
+      "index": 5,
+      "sourceTestIndex": 8,
+      "trueLabel": 5,
+      "tag": "typical",
+      "kind": "recorded"
+    },
+    {
+      "index": 6,
+      "sourceTestIndex": 11,
+      "trueLabel": 6,
+      "tag": "typical",
+      "kind": "recorded"
+    },
+    {
+      "index": 7,
+      "sourceTestIndex": 0,
+      "trueLabel": 7,
+      "tag": "typical",
+      "kind": "recorded"
+    },
+    {
+      "index": 8,
+      "sourceTestIndex": 61,
+      "trueLabel": 8,
+      "tag": "typical",
+      "kind": "recorded"
+    },
+    {
+      "index": 9,
+      "sourceTestIndex": 7,
+      "trueLabel": 9,
+      "tag": "typical",
+      "kind": "recorded"
+    },
+    {
+      "index": 10,
+      "sourceTestIndex": 92,
+      "trueLabel": 9,
+      "tag": "difficult",
+      "kind": "recorded"
+    },
+    {
+      "index": 11,
+      "sourceTestIndex": 321,
+      "trueLabel": 2,
+      "tag": "difficult",
+      "kind": "recorded"
+    },
+    {
+      "index": 12,
+      "sourceTestIndex": 359,
+      "trueLabel": 9,
+      "tag": "difficult",
+      "kind": "recorded"
+    },
+    {
+      "index": 13,
+      "sourceTestIndex": 445,
+      "trueLabel": 6,
+      "tag": "difficult",
+      "kind": "recorded"
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+# Claude Code / agent-local files — never committed
+CLAUDE.md
+AGENTS.md
+.claude/
+
+# OS junk
+.DS_Store
+
+# Node dependencies (dev-only test tooling) — reinstall with `npm install` in dev/node_test
+dev/node_test/node_modules/

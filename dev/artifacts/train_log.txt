@@ -1,0 +1,12 @@
+Total trainable parameters: 468010
+Epoch 1: train_loss=0.1545 train_acc=95.32% val_loss=0.0465 val_acc=98.70% (98.6s)
+Epoch 2: train_loss=0.0541 train_acc=98.35% val_loss=0.0402 val_acc=98.83% (107.8s)
+Epoch 3: train_loss=0.0410 train_acc=98.73% val_loss=0.0374 val_acc=98.95% (120.7s)
+Epoch 4: train_loss=0.0325 train_acc=98.99% val_loss=0.0345 val_acc=99.03% (103.8s)
+Epoch 5: train_loss=0.0289 train_acc=99.10% val_loss=0.0335 val_acc=99.12% (118.5s)
+
+Final test: loss=0.0211 acc=99.31% correct=9931/10000
+Per-class accuracy: [99.69, 99.82, 99.52, 99.7, 99.8, 98.99, 98.75, 99.32, 99.08, 98.32]
+Best validation checkpoint: epoch 5 (val_acc=99.12%)
+
+Saved: dev/artifacts/canonical_model_final.pt, canonical_model_best.pt, training_summary.json

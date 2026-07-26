@@ -1,0 +1,227 @@
+{
+  "formatVersion": 1,
+  "dtype": "float32",
+  "byteOrder": "little",
+  "totalFloats": 468394,
+  "totalBytes": 1873576,
+  "checksumFNV1a": 1338722858,
+  "trainableParameterCount": 468010,
+  "tensors": [
+    {
+      "name": "conv1.weight",
+      "shape": [
+        32,
+        1,
+        3,
+        3
+      ],
+      "offsetFloats": 0,
+      "countFloats": 288
+    },
+    {
+      "name": "bn1.gamma",
+      "shape": [
+        32
+      ],
+      "offsetFloats": 288,
+      "countFloats": 32
+    },
+    {
+      "name": "bn1.beta",
+      "shape": [
+        32
+      ],
+      "offsetFloats": 320,
+      "countFloats": 32
+    },
+    {
+      "name": "bn1.running_mean",
+      "shape": [
+        32
+      ],
+      "offsetFloats": 352,
+      "countFloats": 32
+    },
+    {
+      "name": "bn1.running_var",
+      "shape": [
+        32
+      ],
+      "offsetFloats": 384,
+      "countFloats": 32
+    },
+    {
+      "name": "conv2.weight",
+      "shape": [
+        32,
+        32,
+        3,
+        3
+      ],
+      "offsetFloats": 416,
+      "countFloats": 9216
+    },
+    {
+      "name": "bn2.gamma",
+      "shape": [
+        32
+      ],
+      "offsetFloats": 9632,
+      "countFloats": 32
+    },
+    {
+      "name": "bn2.beta",
+      "shape": [
+        32
+      ],
+      "offsetFloats": 9664,
+      "countFloats": 32
+    },
+    {
+      "name": "bn2.running_mean",
+      "shape": [
+        32
+      ],
+      "offsetFloats": 9696,
+      "countFloats": 32
+    },
+    {
+      "name": "bn2.running_var",
+      "shape": [
+        32
+      ],
+      "offsetFloats": 9728,
+      "countFloats": 32
+    },
+    {
+      "name": "conv3.weight",
+      "shape": [
+        64,
+        32,
+        3,
+        3
+      ],
+      "offsetFloats": 9760,
+      "countFloats": 18432
+    },
+    {
+      "name": "bn3.gamma",
+      "shape": [
+        64
+      ],
+      "offsetFloats": 28192,
+      "countFloats": 64
+    },
+    {
+      "name": "bn3.beta",
+      "shape": [
+        64
+      ],
+      "offsetFloats": 28256,
+      "countFloats": 64
+    },
+    {
+      "name": "bn3.running_mean",
+      "shape": [
+        64
+      ],
+      "offsetFloats": 28320,
+      "countFloats": 64
+    },
+    {
+      "name": "bn3.running_var",
+      "shape": [
+        64
+      ],
+      "offsetFloats": 28384,
+      "countFloats": 64
+    },
+    {
+      "name": "conv4.weight",
+      "shape": [
+        64,
+        64,
+        3,
+        3
+      ],
+      "offsetFloats": 28448,
+      "countFloats": 36864
+    },
+    {
+      "name": "bn4.gamma",
+      "shape": [
+        64
+      ],
+      "offsetFloats": 65312,
+      "countFloats": 64
+    },
+    {
+      "name": "bn4.beta",
+      "shape": [
+        64
+      ],
+      "offsetFloats": 65376,
+      "countFloats": 64
+    },
+    {
+      "name": "bn4.running_mean",
+      "shape": [
+        64
+      ],
+      "offsetFloats": 65440,
+      "countFloats": 64
+    },
+    {
+      "name": "bn4.running_var",
+      "shape": [
+        64
+      ],
+      "offsetFloats": 65504,
+      "countFloats": 64
+    },
+    {
+      "name": "fc1.weight",
+      "shape": [
+        128,
+        3136
+      ],
+      "offsetFloats": 65568,
+      "countFloats": 401408
+    },
+    {
+      "name": "fc1.bias",
+      "shape": [
+        128
+      ],
+      "offsetFloats": 466976,
+      "countFloats": 128
+    },
+    {
+      "name": "fc2.weight",
+      "shape": [
+        10,
+        128
+      ],
+      "offsetFloats": 467104,
+      "countFloats": 1280
+    },
+    {
+      "name": "fc2.bias",
+      "shape": [
+        10
+      ],
+      "offsetFloats": 468384,
+      "countFloats": 10
+    }
+  ],
+  "architectureId": "canonical-32-64",
+  "trainedWith": {
+    "optimizer": "adam",
+    "learningRate": 0.001,
+    "epochs": 5,
+    "batchSize": 128,
+    "dropout": 0.3,
+    "weightDecay": 0.0001,
+    "seed": 42
+  }
+}
