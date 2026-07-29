@@ -10,6 +10,7 @@
    REGION 2: DESIGN TOKENS AND CSS
    ========================================================================= */
 :root{
+  color-scheme: light dark;
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 
@@ -107,6 +108,24 @@ h1,h2,h3,h4{ line-height:1.25; margin: 0 0 var(--space-2) 0; }
 p{ margin:0 0 var(--space-3) 0; }
 button, input, select, textarea{ font-family: inherit; font-size: inherit; color: inherit; }
 button{ cursor:pointer; }
+/* Native form controls otherwise keep the browser's default (often light) background
+   while `color: inherit` makes their text match this app's theme — in dark mode that
+   is near-white text on a near-white native background, i.e. invisible. Give every
+   text-entry control an explicit themed background/border so its value is always
+   legible in both light and dark mode. */
+select, textarea,
+input[type="text"], input[type="number"], input[type="search"], input[type="file"]{
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+}
+select:focus-visible, textarea:focus-visible,
+input[type="text"]:focus-visible, input[type="number"]:focus-visible,
+input[type="search"]:focus-visible, input[type="file"]:focus-visible{
+  outline: var(--focus-ring); outline-offset: 1px;
+}
 code, pre, .mono{ font-family: var(--font-mono); }
 a{ color: var(--color-data); }
 

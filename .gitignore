@@ -8,3 +8,6 @@ AGENTS.md
 
 # Node dependencies (dev-only test tooling) — reinstall with `npm install` in dev/node_test
 dev/node_test/node_modules/
+
+# Ad-hoc screenshots (may contain personal browser/desktop content) — never committed
+dev/artifacts/temp_screenshots/
