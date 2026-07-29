@@ -46,7 +46,8 @@ architecture state on purpose, per the functional spec §6.2).
 6. **Teach the CNN** — run the (simulated) training trace; see loss/accuracy curves and
    the correct training-step order.
 7. **Check the Learning** — dataset split (train/validation/test), data-leakage warning,
-   canonical test result, per-class accuracy.
+   canonical test result, per-class accuracy, and a real 10×10 confusion matrix measured
+   from the app's own embedded model (not an invented illustration).
 8. **Challenge the CNN** — draw an unseen digit and get a **genuine** prediction.
 
 ### Playground
@@ -56,8 +57,11 @@ Flatten/Dense, Dropout, Train, Predict, Code, Builder, Challenges, Glossary) sit
 below a persistent **architecture canvas** that always shows the full CNN, its shapes,
 its parameter counts, and whether it's currently valid.
 
-- **Builder**: add/remove/reorder/configure layers with buttons (no drag required),
-  undo/redo, "Restore canonical CNN," and the same repair challenge from the Mission.
+- **Builder**: add/remove/reorder/configure layers — drag a row by its ⠿ handle, or use
+  the ↑/↓ buttons (both work; buttons are the accessible fallback) — plus undo/redo,
+  "Restore canonical CNN," and the same repair challenge from the Mission.
+- **Train**: switch the optimizer between **Adam** and **SGD** and watch both the
+  matching trace and the generated PyTorch code update live.
 - **Code**: PyTorch generated live from whatever architecture is currently on screen —
   never a separately hand-written version that could drift out of sync.
 - **Predict**: draw with mouse/touch/pen, or pick a bundled sample digit; see the
@@ -74,9 +78,13 @@ were doing.
 
 ### Settings (⚙️ in the top nav)
 
-Reduced motion, reset Guided Mission progress / Playground / all local data, export or
-import a Playground project as JSON, and a "Run self-tests" button for a plain-language
-pass/fail report of the app's internal checks.
+Reduced motion, sound effects (short chimes for achievements/challenges/predictions —
+muted by default), reset Guided Mission progress / Playground / all local data, export
+or import a Playground project as JSON, a **Model provenance** panel (the exact
+hyperparameters the embedded model was trained with, plus buttons to download the real
+training/export scripts and training log — for transparency only; nothing here retrains
+anything in your browser), and a "Run self-tests" button for a plain-language pass/fail
+report of the app's internal checks.
 
 Progress is stored **only** in `localStorage` in your browser — nothing is ever sent
 anywhere.
@@ -108,6 +116,7 @@ else. Internally it's split into 20 labeled regions (search the file for `REGION
 | 15 | PyTorch code generator (`CodeGen`, `buildFullPySource`, clickable-token highlighting) | 5002 |
 | 16 | Persistence (`Persistence.save/load/clearAll/exportProject/importProject`) | 1768 |
 | 17 | Accessibility helpers (`A11y`, DOM helpers `el`/`clearNode`, toasts) | 1890 |
+| 17b | Sound (`Sound.playTone`/`correct`/`incorrect`/`achievement`/`predictDone` — Web Audio API, synthesized, muted by default) | 1934 |
 | 18 | View router (`Views`, `Router.goToView`) + Settings dialog + top-nav/startup event binding | 2217, 5650 |
 | 19 | Internal self-tests (`SelfTest.run`, exposed as `window.CNNLabSelfTest`) | 5557 |
 | 20 | Application bootstrap (`bootstrap()`, wired to `DOMContentLoaded`) | 5801 |
@@ -177,11 +186,13 @@ separately trained model — it never implies one produced the other.
 You don't need any of this to *use* the app — only to change the model or re-embed data.
 
 ```bash
-python3 dev/train_model.py       # trains the canonical CNN on real MNIST (PyTorch, CPU)
-python3 dev/export_weights.py    # exports weights + sample digits + reference logits
-python3 dev/build_finalize.py    # splices the base64 data into cnn-learning-lab.html
-node dev/node_test/run_check.js       # jsdom: self-tests + JS-vs-PyTorch inference check
-node dev/node_test/browser_check.js   # real Chrome: full Guided Mission + predict + a11y
+python3 dev/train_model.py               # trains the canonical CNN on real MNIST (PyTorch, CPU)
+python3 dev/export_weights.py            # exports weights + sample digits + reference logits
+python3 dev/compute_confusion_matrix.py  # evaluates the trained checkpoint into a real confusion matrix
+python3 dev/build_finalize.py            # splices all embedded data into cnn-learning-lab.html
+node dev/node_test/run_check.js          # jsdom: self-tests + JS-vs-PyTorch inference check
+node dev/node_test/browser_check.js      # real Chrome: full Guided Mission + predict + a11y
+node dev/node_test/offline_check.js      # real Chrome with networking fully disabled
 ```
 
 See [`dev/README.md`](dev/README.md) for details on each script and test harness.

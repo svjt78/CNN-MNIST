@@ -70,8 +70,8 @@ Using Playwright driving real Google Chrome, and a Node+jsdom harness for the se
 ## 6. Known limitations
 
 - My own from-scratch PyTorch training run (needed to obtain genuine embedded weights) reached 99.31% test accuracy with its best checkpoint at epoch 5 — close to, but not bit-identical with, the specification's exact recorded trace (99.11% test accuracy, best checkpoint at epoch 2), since the original notebook/run isn't available to reproduce exactly. The app displays the specification's exact numbers as the labeled "recorded experiment" trace in the Training Simulator, and uses my own genuinely-trained weights for live inference — the two are never conflated, and the app is explicit that training is simulated while prediction uses a separately, genuinely trained model.
-- The dense-layer connection diagram and the confusion matrix are explicitly labeled as abstractions/illustrations, per specification.
-- Sound, SGD as an active training-simulator control, and full drag-and-drop reordering in the Builder (button/keyboard reorder is implemented instead) were treated as optional ("could have" / explicitly-not-required) per the specification's own prioritization and were not built, to keep effort focused on the "must have" list.
+- The dense-layer connection diagram is explicitly labeled as an abstraction, per specification. (The confusion matrix is no longer illustrative-only — see §8 below.)
+- ~~Sound, SGD as an active training-simulator control, and full drag-and-drop reordering~~ — all three were added in the enhancement round described in §8; see there for details.
 
 ## 7. Development-only tooling
 
@@ -80,3 +80,59 @@ Everything needed to reproduce or re-validate the build lives in `dev/` (see `de
 - `dev/train_model.py`, `dev/export_weights.py`, `dev/build_finalize.py` — train the canonical model, export/checksum weights + sample digits + reference logits, and splice them into `cnn-learning-lab.html`.
 - `dev/artifacts/` — model checkpoints, encoded weights/samples, training log and summary.
 - `dev/node_test/` — validation harnesses: `run_check.js` (jsdom self-test + JS-vs-PyTorch inference comparison), `browser_check.js` (real-Chrome end-to-end walkthrough), `offline_check.js` (network-disabled load test).
+
+---
+
+## 8. Enhancement round: closing 5 known gaps (2026-07-25)
+
+Following a functionality analysis, five known gaps were closed — all confirmed
+single-file-safe beforehand (no new runtime dependency, no server, no adjacent files):
+
+1. **Sound** — a small `Sound` module (Web Audio API oscillators, no embedded audio
+   files) with a Settings toggle, **muted by default**. Hooked into achievements,
+   challenge answers, and prediction completion.
+2. **SGD as an active training-simulator control** — a real optimizer selector (Adam/SGD)
+   in the Training Simulator, a new labeled-`simulated` SGD comparison trace, and a
+   `CodeGen` branch emitting `torch.optim.SGD(..., momentum=0.9, ...)`. Also fixed a
+   pre-existing bug where the trace lookup silently ignored the optimizer and always
+   matched against `"adam"`.
+3. **Drag-and-drop reordering in the Builder** — native HTML5 drag-and-drop, additive to
+   (not a replacement for) the existing ↑/↓ buttons, which remain the accessible/keyboard
+   fallback exactly as the original spec allows ("drag interaction where reliable; button/
+   keyboard alternatives to drag").
+4. **A real confusion matrix** — `dev/compute_confusion_matrix.py` evaluates the existing
+   trained checkpoint against all 10,000 real MNIST test images (no retraining) and
+   embeds the genuine 10×10 result. **Framing note:** this matrix's diagonal sums to
+   9,931 — the actual embedded model's measured count — not 9,911 (the specification's
+   mandated reference headline figure, still shown as-is elsewhere per §6 above). The UI
+   captions the matrix as "measured from this app's embedded model" specifically to keep
+   these two honestly distinct rather than silently reconciling them.
+5. **Model provenance / transparency panel** — Settings now shows the real training
+   hyperparameters and offers "download the training script / export script / training
+   log" buttons (`Blob`-based, same mechanism as the PyTorch Code Studio's `.py`
+   download). Explicitly download-only — no in-browser retraining, which would have
+   required a Python/PyTorch runtime and directly contradicted the app's own "training
+   is simulated, never faked" design.
+
+### Additional bug found and fixed during this round
+
+The shared `el(tag, attrs, children)` DOM-builder helper passed `disabled: <boolean>`
+through `setAttribute`, which sets the attribute **whenever called, regardless of the
+boolean's value** — `disabled="false"` still disables an element in HTML, since presence
+(not value) controls the disabled state. This silently broke the new Model Provenance
+download buttons (permanently disabled). Fixed by special-casing `disabled`/`checked`/
+`readOnly`/`selected` to set the DOM property instead of the attribute. The Code
+Studio's download/copy buttons had the same latent bug but were masked by a second,
+unrelated pass (`updateActionAvailability`) that happened to correct them via direct
+property assignment — they now work correctly from first render too, not by accident.
+
+### Validation
+
+- Internal self-tests: **19/19 passing** (16 previous + 3 new: confusion-matrix
+  invariant, SGD code generation, dev-script transparency decode).
+- Real Chrome via `file://`, network fully disabled: SGD switch regenerates code
+  correctly; confusion matrix renders exactly 100 real cells; native drag-and-drop
+  reorder confirmed working (plus the button fallback independently confirmed); all 3
+  Model Provenance downloads fire; sound setting off by default and persists across
+  reload; zero console/page errors; zero external requests.
+- Final file size: 2.72 MB (grew ~33 KB from the new embedded data/scripts).

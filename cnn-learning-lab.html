@@ -510,6 +510,12 @@ var EDU = {
   samples: [],
   sampleImageSize: 28,
 
+  // Real 10x10 confusion matrix measured by running this app's actual embedded model
+  // against the full real MNIST test set (dev/compute_confusion_matrix.py). This is
+  // measured data, not an invented illustration — see the confusion_matrix concept
+  // and Settings -> Model provenance for how it was produced.
+  confusionMatrix: [[977, 0, 0, 0, 0, 0, 1, 1, 1, 0], [0, 1133, 1, 1, 0, 0, 0, 0, 0, 0], [1, 0, 1027, 0, 0, 0, 0, 4, 0, 0], [0, 0, 0, 1007, 0, 1, 0, 1, 1, 0], [0, 0, 0, 0, 980, 0, 0, 0, 0, 2], [0, 0, 0, 6, 0, 883, 1, 1, 0, 1], [2, 4, 0, 0, 2, 1, 946, 0, 3, 0], [0, 4, 3, 0, 0, 0, 0, 1021, 0, 0], [1, 0, 4, 0, 1, 0, 0, 1, 965, 2], [0, 0, 0, 1, 11, 0, 0, 3, 2, 992]],
+
   achievementsCatalog: [
     { id:"pixel_explorer", name:"Pixel Explorer", desc:"Inspected pixel values in the image lab." },
     { id:"filter_finder", name:"Filter Finder", desc:"Ran a convolution filter across the teaching grid." },
@@ -594,6 +600,20 @@ function buildTraceLibrary(){
       {epoch:5,trainLoss:0.05,trainAccuracy:98.4,valLoss:0.07,valAccuracy:98.0}
     ],
     note:"Educational simulation: without batch normalization, training is typically a little slower and less stable epoch to epoch."
+  });
+
+  lib.push({
+    id:"sgd-lr01-do30", kind:"simulated", label:"Educational: SGD with momentum (lr 0.01)",
+    optimizer:"sgd", learningRate:0.01, epochs:5, batchSize:128, dropout:0.30, weightDecay:0.0001,
+    inputNormalization:true, batchNormalization:true, bestEpoch:5,
+    epochs_data:[
+      {epoch:1,trainLoss:0.52,trainAccuracy:83.7,valLoss:0.23,valAccuracy:93.1},
+      {epoch:2,trainLoss:0.22,trainAccuracy:93.4,valLoss:0.14,valAccuracy:95.9},
+      {epoch:3,trainLoss:0.15,trainAccuracy:95.4,valLoss:0.10,valAccuracy:97.1},
+      {epoch:4,trainLoss:0.12,trainAccuracy:96.3,valLoss:0.08,valAccuracy:97.6},
+      {epoch:5,trainLoss:0.10,trainAccuracy:96.9,valLoss:0.07,valAccuracy:97.9}
+    ],
+    note:"Educational simulation: SGD with momentum typically starts slower than Adam and needs a larger learning rate, but improves steadily without much sign of overfitting yet by epoch 5."
   });
 
   return lib;
@@ -1330,9 +1350,11 @@ addConcept({ id:"per_class_accuracy", displayName:"Per-Class Accuracy", childFri
 addConcept({ id:"confusion_matrix", displayName:"Confusion Matrix", childFriendlyName:"A table of what got mistaken for what",
   oneSentenceDefinition:"A confusion matrix is a table showing how often each true digit was predicted as each possible digit, revealing common mix-ups.",
   analogy:"Like a table showing how often 'actually a 7' got marked as a '1' by mistake, and how often that happened for every digit pair.",
-  purposeInThisCNN:"This lab shows a conceptual, clearly-labeled illustrative confusion pattern (such as 4/9 and 3/5/8 mix-ups), since exact confusion counts were not part of the recorded canonical experiment.",
-  inputDescription:"", outputDescription:"", animationType:"none", workedExample:"", formula:"", pytorchSnippet:"",
-  commonMistake:"Treating an illustrative confusion matrix as exact measured counts — this lab clearly labels it as a conceptual illustration, not measured data.",
+  purposeInThisCNN:"The Check the Learning step shows a real 10×10 confusion matrix, measured by running this app's actual embedded model against all 10,000 real MNIST test images — not an invented illustration.",
+  inputDescription:"", outputDescription:"", animationType:"none",
+  workedExample:"In the measured matrix, the largest single mix-up is true digit 9 predicted as 4 (11 times out of 10,000 test images) — a real, if uncommon, confusion between two digits that can look similar when handwritten quickly.",
+  formula:"", pytorchSnippet:"",
+  commonMistake:"Assuming every model's confusion matrix looks the same — the exact mix-up counts depend on the specific trained weights, so a retrained model (even with identical settings) would show slightly different numbers.",
   trainingBehavior:"", inferenceBehavior:"",
   relatedConceptIds:["per_class_accuracy","accuracy"], challengeId:null });
 
@@ -1696,7 +1718,8 @@ function defaultState(){
     },
     a11y: {
       reducedMotion: window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-      highContrast: false
+      highContrast: false,
+      soundEnabled: false
     },
     conceptsViewed: [],
     achievements: [],
@@ -1718,6 +1741,7 @@ function grantAchievement(id){
     AppState.achievements.push(id);
     var a = EDU.achievementsCatalog.filter(function(x){return x.id===id;})[0];
     if (a) showToast("🏅 Achievement: " + a.name);
+    Sound.achievement();
   }
 }
 
@@ -1906,6 +1930,47 @@ A11y.announce = function(msg){
   if (live) live.textContent = msg;
 };
 
+/* =========================================================================
+   REGION 17b: SOUND (Web Audio API, synthesized — no embedded audio files,
+   muted by default per the functional specification's own recommendation)
+   ========================================================================= */
+var Sound = {};
+Sound._ctx = null;
+
+Sound._getContext = function(){
+  if (Sound._ctx) return Sound._ctx;
+  var Ctor = window.AudioContext || window.webkitAudioContext;
+  if (!Ctor) return null;
+  try{ Sound._ctx = new Ctor(); } catch(e){ Sound._ctx = null; }
+  return Sound._ctx;
+};
+
+// Plays one short tone. Never throws — sound is a pure nice-to-have and must never
+// break the app if the Web Audio API is unavailable or blocked.
+Sound.playTone = function(freq, durationMs, type, delayMs){
+  if (!AppState.a11y.soundEnabled) return;
+  var ctx = Sound._getContext();
+  if (!ctx) return;
+  try{
+    var startAt = ctx.currentTime + ((delayMs||0)/1000);
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.type = type || "sine";
+    osc.frequency.setValueAtTime(freq, startAt);
+    gain.gain.setValueAtTime(0.0001, startAt);
+    gain.gain.exponentialRampToValueAtTime(0.12, startAt + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startAt + durationMs/1000);
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(startAt);
+    osc.stop(startAt + durationMs/1000 + 0.02);
+  } catch(e){ /* ignore — sound must never break the app */ }
+};
+
+Sound.correct = function(){ Sound.playTone(660,120,"sine"); Sound.playTone(880,160,"sine",110); };
+Sound.incorrect = function(){ Sound.playTone(220,220,"sine"); };
+Sound.achievement = function(){ Sound.playTone(523,110,"triangle"); Sound.playTone(659,110,"triangle",100); Sound.playTone(784,180,"triangle",200); };
+Sound.predictDone = function(){ Sound.playTone(740,90,"sine"); };
+
 /* Small DOM helpers used throughout the UI layer. */
 function el(tag, attrs, children){
   var node = document.createElement(tag);
@@ -1915,6 +1980,10 @@ function el(tag, attrs, children){
     else if (k==="text") node.textContent = attrs[k];
     else if (k==="html") node.innerHTML = attrs[k];
     else if (k.indexOf("on")===0 && typeof attrs[k]==="function") node.addEventListener(k.slice(2).toLowerCase(), attrs[k]);
+    // HTML boolean attributes (disabled, checked, readOnly, selected) are disabled/checked/etc.
+    // based on ATTRIBUTE PRESENCE, not its string value — setAttribute("disabled","false") would
+    // still disable the element. Set these as DOM properties instead so plain booleans work.
+    else if (k==="disabled" || k==="checked" || k==="readOnly" || k==="selected"){ node[k] = !!attrs[k]; }
     else if (attrs[k]!==undefined && attrs[k]!==null) node.setAttribute(k, attrs[k]);
   });
   (children||[]).forEach(function(c){ if (c) node.appendChild(typeof c==="string" ? document.createTextNode(c) : c); });
@@ -3020,6 +3089,17 @@ function moveLayer(idx, dir){
   var tmp = layers[idx]; layers[idx]=layers[j]; layers[j]=tmp;
   Engine.propagateArchitecture(layers);
 }
+function isReorderableIndex(idx, layers){ return idx>=1 && idx<=layers.length-2; }
+function reorderLayer(fromIdx, toIdx){
+  var layers = AppState.playground.layers;
+  if (fromIdx===toIdx) return;
+  if (!isReorderableIndex(fromIdx, layers) || !isReorderableIndex(toIdx, layers)) return;
+  pushHistorySnapshot();
+  var moved = layers.splice(fromIdx, 1)[0];
+  layers.splice(toIdx, 0, moved);
+  Engine.propagateArchitecture(layers);
+  AppState.diagnostics.playgroundUses++;
+}
 function removeLayerAt(idx){
   var layers = AppState.playground.layers;
   if (REMOVABLE_KINDS.indexOf(layers[idx].type)===-1) return;
@@ -3045,6 +3125,7 @@ Views.builder = { render:function(container){
 
   container.appendChild(el("h3",{},["Architecture Builder"]));
   container.appendChild(el("p",{class:"small"},["Add, remove, reorder, and configure supported blocks. Invalid combinations are marked clearly instead of crashing."]));
+  container.appendChild(el("p",{class:"tiny"},["Drag a row by its ⠿ handle to reorder it, or use the ↑/↓ buttons."]));
 
   container.appendChild(el("div",{class:"hstack"},[
     el("button",{class:"btn btn-sm", type:"button", onClick:function(){ if(!undoPlayground()) showToast("Nothing to undo"); renderContextPanel(); }},["↶ Undo"]),
@@ -3054,15 +3135,30 @@ Views.builder = { render:function(container){
   ]));
 
   var list = el("div",{class:"vstack",style:"margin-top:10px;"});
+  var dragSourceIdx = null;
   layers.forEach(function(layer, idx){
+    var reorderable = isReorderableIndex(idx, layers);
     var row = el("div",{class:"panel-section", style: layer.valid ? "" : "border-color:var(--color-invalid);"});
     var head = el("div",{class:"hstack"},[
+      reorderable ? el("span",{class:"tiny", style:"cursor:grab;", "aria-hidden":"true", title:"Drag to reorder"},["⠿"]) : null,
       el("strong",{},[layer.displayName]),
       el("span",{class:"tiny"},[layer.type]),
       el("span",{class:"tiny mono"},[shapeLabel(layer.inputShape)+" → "+shapeLabel(layer.outputShape)]),
       layer.trainableParameters ? el("span",{class:"tiny"},[layer.trainableParameters.toLocaleString()+" params"]) : null
     ]);
     row.appendChild(head);
+
+    if (reorderable){
+      row.setAttribute("draggable","true");
+      row.addEventListener("dragstart", function(e){ dragSourceIdx = idx; row.style.opacity="0.5"; if (e.dataTransfer) e.dataTransfer.effectAllowed="move"; });
+      row.addEventListener("dragend", function(){ row.style.opacity=""; });
+      row.addEventListener("dragover", function(e){ e.preventDefault(); row.style.outline="2px dashed var(--color-data)"; });
+      row.addEventListener("dragleave", function(){ row.style.outline=""; });
+      row.addEventListener("drop", function(e){
+        e.preventDefault(); row.style.outline="";
+        if (dragSourceIdx!=null){ reorderLayer(dragSourceIdx, idx); dragSourceIdx=null; renderContextPanel(); }
+      });
+    }
 
     if (!layer.valid){
       layer.validationMessages.forEach(function(m){ row.appendChild(el("p",{class:"tiny",style:"color:var(--color-invalid);"},["⚠ "+m])); });
@@ -3259,7 +3355,7 @@ function renderChallenge(id, hostEl){
         var result = AppState.mission.challengeResults[id] || {attempts:0, correct:false};
         result.attempts++; result.correct = isCorrect || result.correct;
         AppState.mission.challengeResults[id] = result;
-        if (isCorrect) grantAchievement("parameter_detective");
+        if (isCorrect){ grantAchievement("parameter_detective"); Sound.correct(); } else { Sound.incorrect(); }
         renderOptions();
         Persistence.save();
       }},[opt]);
@@ -3361,7 +3457,22 @@ Views.train = {
     hpBox.appendChild(el("h4",{},["Hyperparameters"]));
     var hpRow1 = el("div",{class:"hstack"});
     hpRow1.appendChild(el("label",{class:"field-label",style:"margin:0;"},[explainBtn("optimizer","Optimizer")]));
-    hpRow1.appendChild(el("span",{class:"badge badge-learnable"},["Adam"]));
+    hpRow1.appendChild((function(){
+      var sel = el("select",{});
+      [["adam","Adam"],["sgd","SGD"]].forEach(function(pair){
+        var opt = el("option",{value:pair[0]},[pair[1]]);
+        if (hp.optimizer===pair[0]) opt.setAttribute("selected","selected");
+        sel.appendChild(opt);
+      });
+      sel.addEventListener("change", function(){
+        hp.optimizer = sel.value;
+        // Switch to a sensible default learning rate for the newly selected optimizer
+        // so the trace lookup below finds a matching recorded/educational run immediately.
+        hp.learningRate = hp.optimizer==="sgd" ? 0.01 : 0.001;
+        syncTraceToHyperparams(); renderContextPanel();
+      });
+      return sel;
+    })());
     hpRow1.appendChild(el("label",{class:"field-label",style:"margin:0;"},[explainBtn("learning_rate","Learning rate")]));
     hpRow1.appendChild(selectFloatInput([0.01,0.001,0.0001], hp.learningRate, function(v){ hp.learningRate=v; syncTraceToHyperparams(); renderContextPanel(); }));
     hpRow1.appendChild(el("label",{class:"field-label",style:"margin:0;"},[explainBtn("epoch","Epochs")]));
@@ -3381,7 +3492,7 @@ Views.train = {
     container.appendChild(hpBox);
 
     function syncTraceToHyperparams(){
-      var found = findTrace({ optimizer:"adam", learningRate:hp.learningRate, dropout:hp.dropout, batchNormalization:hp.batchNormalization, inputNormalization:true });
+      var found = findTrace({ optimizer:hp.optimizer, learningRate:hp.learningRate, dropout:hp.dropout, batchNormalization:hp.batchNormalization, inputNormalization:true });
       s._runId = found ? found.id : "unsupported";
       s._epoch = 0;
     }
@@ -3628,12 +3739,40 @@ function renderDatasetEvaluationSection(){
   t.appendChild(tbody);
   box.appendChild(t);
 
-  box.appendChild(el("details",{class:"panel-section"},[
-    el("summary",{},[explainBtn("confusion_matrix","Conceptual confusion pattern (illustrative)")]),
-    el("p",{class:"small",style:"margin-top:8px;"},["Exact confusion counts were not part of the recorded canonical experiment, so this is a labeled illustration, not measured data: digits like 4/9, 3/5/8, and 7/1 are the kinds of pairs that most often get confused, because their strokes can look similar when handwritten quickly."])
+  box.appendChild(el("details",{class:"panel-section", open:"open"},[
+    el("summary",{},[explainBtn("confusion_matrix","Confusion matrix (measured from this app's embedded model)")]),
+    el("div",{style:"margin-top:8px;"},[confusionMatrixTable()]),
+    el("p",{class:"tiny"},["Rows = true digit, columns = predicted digit. Diagonal (green) = correct; off-diagonal = mix-ups, shaded darker the more often they happened. Measured by running the actual embedded model against all 10,000 real test images — see Settings → Model provenance for how."])
   ]));
 
   return box;
+}
+
+function confusionMatrixTable(){
+  var m = EDU.confusionMatrix;
+  if (!m || !m.length) return el("p",{class:"tiny"},["(confusion matrix unavailable)"]);
+  var maxOffDiag = 1;
+  for (var r=0;r<10;r++) for (var c=0;c<10;c++) if (r!==c) maxOffDiag = Math.max(maxOffDiag, m[r][c]);
+
+  var table = el("table",{class:"datatable", style:"font-size:0.72rem;"});
+  var headRow = el("tr",{},[el("th",{},["true \\ pred"])]);
+  for (var c2=0;c2<10;c2++) headRow.appendChild(el("th",{},[String(c2)]));
+  table.appendChild(el("thead",{},[headRow]));
+
+  var tbody = el("tbody");
+  for (var t=0;t<10;t++){
+    var row = el("tr",{},[el("th",{},[String(t)])]);
+    for (var p=0;p<10;p++){
+      var v = m[t][p];
+      var bg = "";
+      if (t===p){ bg = "background:var(--color-good-bg);font-weight:700;"; }
+      else if (v>0){ var intensity = 0.15 + 0.7*(v/maxOffDiag); bg = "background:rgba(192,32,58,"+intensity.toFixed(2)+");"+(intensity>0.4?"color:#fff;":""); }
+      row.appendChild(el("td",{style:"text-align:center;"+bg, title:"True "+t+", predicted "+p+": "+v}, [String(v)]));
+    }
+    tbody.appendChild(row);
+  }
+  table.appendChild(tbody);
+  return table;
 }
 
 /* =========================================================================
@@ -4442,6 +4581,89 @@ function decodeSampleDigits(){
   }
 }
 
+// Embedded, for-transparency-only copies of the dev-time training/export scripts (as
+// plain base64-encoded text) and the resulting training log. These are never executed
+// — they exist purely so a curious student/teacher can download and read exactly how
+// the embedded model was produced, without any Python/PyTorch runtime in the browser.
+var TRAIN_SCRIPT_BASE64 = "IiIiCkRFVi1PTkxZIFNDUklQVC4gTm90IHBhcnQgb2YgdGhlIHNoaXBwZWQgcnVudGltZSBhcnRpZmFjdCAoY25uLWxlYXJuaW5nLWxhYi5odG1sKS4KClRyYWlucyB0aGUgY2Fub25pY2FsIENOTiBMZWFybmluZyBMYWIgYXJjaGl0ZWN0dXJlIG9uIHJlYWwgTU5JU1QgZGF0YSB1c2luZyB0aGUKY2Fub25pY2FsIGh5cGVycGFyYW1ldGVycyBzcGVjaWZpZWQgaW4gQ05OX0xlYXJuaW5nX0xhYl9GdW5jdGlvbmFsX1NwZWNpZmljYXRpb24ubWQsCnRoZW4gc2F2ZXMgdGhlIHRyYWluZWQgc3RhdGVfZGljdCBmb3IgZXhwb3J0IGJ5IGV4cG9ydF93ZWlnaHRzLnB5LgoKQ2Fub25pY2FsIGFyY2hpdGVjdHVyZToKICBDb252KDEtPjMyLGszLHMxLHAxLGJpYXM9RmFsc2UpICsgQk4oMzIpICsgUmVMVQogIENvbnYoMzItPjMyLGszLHMxLHAxLGJpYXM9RmFsc2UpICsgQk4oMzIpICsgUmVMVQogIE1heFBvb2woMiwyKQogIENvbnYoMzItPjY0LGszLHMxLHAxLGJpYXM9RmFsc2UpICsgQk4oNjQpICsgUmVMVQogIENvbnYoNjQtPjY0LGszLHMxLHAxLGJpYXM9RmFsc2UpICsgQk4oNjQpICsgUmVMVQogIE1heFBvb2woMiwyKQogIEZsYXR0ZW4gLT4gTGluZWFyKDMxMzYsMTI4KSAtPiBSZUxVIC0+IERyb3BvdXQoMC4zKSAtPiBMaW5lYXIoMTI4LDEwKQoKSW5wdXQgbm9ybWFsaXphdGlvbiAobWVhbiAwLjEzMDcsIHN0ZCAwLjMwODEpIGlzIGFwcGxpZWQgYXMgYSBkYXRhIHRyYW5zZm9ybSwKbm90IGFzIGEgbW9kZWwgbGF5ZXIsIG1hdGNoaW5nIHRoZSBzcGVjJ3Mgc2VwYXJhdGlvbiBvZiBmb3J3YXJkIHBhdGggc3RhZ2VzLgoiIiIKaW1wb3J0IGpzb24KaW1wb3J0IHJhbmRvbQppbXBvcnQgdGltZQoKaW1wb3J0IG51bXB5IGFzIG5wCmltcG9ydCB0b3JjaAppbXBvcnQgdG9yY2gubm4gYXMgbm4KaW1wb3J0IHRvcmNoLm5uLmZ1bmN0aW9uYWwgYXMgRgpmcm9tIHRvcmNoLnV0aWxzLmRhdGEgaW1wb3J0IERhdGFMb2FkZXIsIFN1YnNldAppbXBvcnQgdG9yY2h2aXNpb24KaW1wb3J0IHRvcmNodmlzaW9uLnRyYW5zZm9ybXMgYXMgVAoKU0VFRCA9IDQyCk1OSVNUX01FQU4gPSAwLjEzMDcKTU5JU1RfU1REID0gMC4zMDgxCgp0b3JjaC5tYW51YWxfc2VlZChTRUVEKQpucC5yYW5kb20uc2VlZChTRUVEKQpyYW5kb20uc2VlZChTRUVEKQoKCmNsYXNzIENvbnZCTlJlTFUobm4uTW9kdWxlKToKICAgIGRlZiBfX2luaXRfXyhzZWxmLCBpbl9jaCwgb3V0X2NoKToKICAgICAgICBzdXBlcigpLl9faW5pdF9fKCkKICAgICAgICBzZWxmLmNvbnYgPSBubi5Db252MmQoaW5fY2gsIG91dF9jaCwga2VybmVsX3NpemU9Mywgc3RyaWRlPTEsIHBhZGRpbmc9MSwgYmlhcz1GYWxzZSkKICAgICAgICBzZWxmLmJuID0gbm4uQmF0Y2hOb3JtMmQob3V0X2NoKQogICAgICAgIHNlbGYucmVsdSA9IG5uLlJlTFUoaW5wbGFjZT1UcnVlKQoKICAgIGRlZiBmb3J3YXJkKHNlbGYsIHgpOgogICAgICAgIHJldHVybiBzZWxmLnJlbHUoc2VsZi5ibihzZWxmLmNvbnYoeCkpKQoKCmNsYXNzIENhbm9uaWNhbENOTihubi5Nb2R1bGUpOgogICAgZGVmIF9faW5pdF9fKHNlbGYpOgogICAgICAgIHN1cGVyKCkuX19pbml0X18oKQogICAgICAgIHNlbGYuYmxvY2sxID0gQ29udkJOUmVMVSgxLCAzMikKICAgICAgICBzZWxmLmJsb2NrMiA9IENvbnZCTlJlTFUoMzIsIDMyKQogICAgICAgIHNlbGYucG9vbDEgPSBubi5NYXhQb29sMmQoMiwgMikKICAgICAgICBzZWxmLmJsb2NrMyA9IENvbnZCTlJlTFUoMzIsIDY0KQogICAgICAgIHNlbGYuYmxvY2s0ID0gQ29udkJOUmVMVSg2NCwgNjQpCiAgICAgICAgc2VsZi5wb29sMiA9IG5uLk1heFBvb2wyZCgyLCAyKQogICAgICAgIHNlbGYuZmMxID0gbm4uTGluZWFyKDY0ICogNyAqIDcsIDEyOCkKICAgICAgICBzZWxmLnJlbHVfZmMgPSBubi5SZUxVKGlucGxhY2U9VHJ1ZSkKICAgICAgICBzZWxmLmRyb3BvdXQgPSBubi5Ecm9wb3V0KDAuMzApCiAgICAgICAgc2VsZi5mYzIgPSBubi5MaW5lYXIoMTI4LCAxMCkKCiAgICBkZWYgZm9yd2FyZChzZWxmLCB4KToKICAgICAgICB4ID0gc2VsZi5ibG9jazEoeCkKICAgICAgICB4ID0gc2VsZi5ibG9jazIoeCkKICAgICAgICB4ID0gc2VsZi5wb29sMSh4KQogICAgICAgIHggPSBzZWxmLmJsb2NrMyh4KQogICAgICAgIHggPSBzZWxmLmJsb2NrNCh4KQogICAgICAgIHggPSBzZWxmLnBvb2wyKHgpCiAgICAgICAgeCA9IHRvcmNoLmZsYXR0ZW4oeCwgMSkKICAgICAgICB4ID0gc2VsZi5mYzEoeCkKICAgICAgICB4ID0gc2VsZi5yZWx1X2ZjKHgpCiAgICAgICAgeCA9IHNlbGYuZHJvcG91dCh4KQogICAgICAgIHggPSBzZWxmLmZjMih4KQogICAgICAgIHJldHVybiB4CgoKZGVmIGNvdW50X3BhcmFtcyhtb2RlbCk6CiAgICByZXR1cm4gc3VtKHAubnVtZWwoKSBmb3IgcCBpbiBtb2RlbC5wYXJhbWV0ZXJzKCkgaWYgcC5yZXF1aXJlc19ncmFkKQoKCmRlZiBtYWluKCk6CiAgICB0cmFuc2Zvcm0gPSBULkNvbXBvc2UoW1QuVG9UZW5zb3IoKSwgVC5Ob3JtYWxpemUoKE1OSVNUX01FQU4sKSwgKE1OSVNUX1NURCwpKV0pCgogICAgZnVsbF90cmFpbiA9IHRvcmNodmlzaW9uLmRhdGFzZXRzLk1OSVNUKHJvb3Q9Ii90bXAvbW5pc3RfZGF0YSIsIHRyYWluPVRydWUsIGRvd25sb2FkPVRydWUsIHRyYW5zZm9ybT10cmFuc2Zvcm0pCiAgICB0ZXN0X3NldCA9IHRvcmNodmlzaW9uLmRhdGFzZXRzLk1OSVNUKHJvb3Q9Ii90bXAvbW5pc3RfZGF0YSIsIHRyYWluPUZhbHNlLCBkb3dubG9hZD1UcnVlLCB0cmFuc2Zvcm09dHJhbnNmb3JtKQoKICAgIGFzc2VydCBsZW4oZnVsbF90cmFpbikgPT0gNjAwMDAKICAgIGFzc2VydCBsZW4odGVzdF9zZXQpID09IDEwMDAwCgogICAgZyA9IHRvcmNoLkdlbmVyYXRvcigpLm1hbnVhbF9zZWVkKFNFRUQpCiAgICBwZXJtID0gdG9yY2gucmFuZHBlcm0obGVuKGZ1bGxfdHJhaW4pLCBnZW5lcmF0b3I9ZykudG9saXN0KCkKICAgIHRyYWluX2lkeCA9IHBlcm1bOjU0MDAwXQogICAgdmFsX2lkeCA9IHBlcm1bNTQwMDA6NjAwMDBdCiAgICB0cmFpbl9zZXQgPSBTdWJzZXQoZnVsbF90cmFpbiwgdHJhaW5faWR4KQogICAgdmFsX3NldCA9IFN1YnNldChmdWxsX3RyYWluLCB2YWxfaWR4KQoKICAgIGJhdGNoX3NpemUgPSAxMjgKICAgIHRyYWluX2xvYWRlciA9IERhdGFMb2FkZXIodHJhaW5fc2V0LCBiYXRjaF9zaXplPWJhdGNoX3NpemUsIHNodWZmbGU9VHJ1ZSwgZ2VuZXJhdG9yPXRvcmNoLkdlbmVyYXRvcigpLm1hbnVhbF9zZWVkKFNFRUQpKQogICAgdmFsX2xvYWRlciA9IERhdGFMb2FkZXIodmFsX3NldCwgYmF0Y2hfc2l6ZT0yNTYsIHNodWZmbGU9RmFsc2UpCiAgICB0ZXN0X2xvYWRlciA9IERhdGFMb2FkZXIodGVzdF9zZXQsIGJhdGNoX3NpemU9MjU2LCBzaHVmZmxlPUZhbHNlKQoKICAgIGRldmljZSA9IHRvcmNoLmRldmljZSgiY3B1IikKICAgIG1vZGVsID0gQ2Fub25pY2FsQ05OKCkudG8oZGV2aWNlKQoKICAgIHRvdGFsX3BhcmFtcyA9IGNvdW50X3BhcmFtcyhtb2RlbCkKICAgIHByaW50KGYiVG90YWwgdHJhaW5hYmxlIHBhcmFtZXRlcnM6IHt0b3RhbF9wYXJhbXN9IikKICAgIGFzc2VydCB0b3RhbF9wYXJhbXMgPT0gNDY4MDEwLCBmIkV4cGVjdGVkIDQ2ODAxMCBwYXJhbXMsIGdvdCB7dG90YWxfcGFyYW1zfSIKCiAgICBvcHRpbWl6ZXIgPSB0b3JjaC5vcHRpbS5BZGFtKG1vZGVsLnBhcmFtZXRlcnMoKSwgbHI9MC4wMDEsIHdlaWdodF9kZWNheT0wLjAwMDEpCiAgICBjcml0ZXJpb24gPSBubi5Dcm9zc0VudHJvcHlMb3NzKCkKCiAgICBlcG9jaHMgPSA1CiAgICBoaXN0b3J5ID0gW10KICAgIGJlc3RfdmFsX2FjYyA9IC0xLjAKICAgIGJlc3Rfc3RhdGUgPSBOb25lCiAgICBiZXN0X2Vwb2NoID0gLTEKCiAgICBmb3IgZXBvY2ggaW4gcmFuZ2UoMSwgZXBvY2hzICsgMSk6CiAgICAgICAgdDAgPSB0aW1lLnRpbWUoKQogICAgICAgIG1vZGVsLnRyYWluKCkKICAgICAgICBydW5uaW5nX2xvc3MgPSAwLjAKICAgICAgICBjb3JyZWN0ID0gMAogICAgICAgIHRvdGFsID0gMAogICAgICAgIGZvciBpbWFnZXMsIGxhYmVscyBpbiB0cmFpbl9sb2FkZXI6CiAgICAgICAgICAgIGltYWdlcywgbGFiZWxzID0gaW1hZ2VzLnRvKGRldmljZSksIGxhYmVscy50byhkZXZpY2UpCiAgICAgICAgICAgIG9wdGltaXplci56ZXJvX2dyYWQoKQogICAgICAgICAgICBvdXRwdXRzID0gbW9kZWwoaW1hZ2VzKQogICAgICAgICAgICBsb3NzID0gY3JpdGVyaW9uKG91dHB1dHMsIGxhYmVscykKICAgICAgICAgICAgbG9zcy5iYWNrd2FyZCgpCiAgICAgICAgICAgIG9wdGltaXplci5zdGVwKCkKCiAgICAgICAgICAgIHJ1bm5pbmdfbG9zcyArPSBsb3NzLml0ZW0oKSAqIGltYWdlcy5zaXplKDApCiAgICAgICAgICAgIHByZWRzID0gb3V0cHV0cy5hcmdtYXgoZGltPTEpCiAgICAgICAgICAgIGNvcnJlY3QgKz0gKHByZWRzID09IGxhYmVscykuc3VtKCkuaXRlbSgpCiAgICAgICAgICAgIHRvdGFsICs9IGltYWdlcy5zaXplKDApCgogICAgICAgIHRyYWluX2xvc3MgPSBydW5uaW5nX2xvc3MgLyB0b3RhbAogICAgICAgIHRyYWluX2FjYyA9IDEwMC4wICogY29ycmVjdCAvIHRvdGFsCgogICAgICAgIG1vZGVsLmV2YWwoKQogICAgICAgIHZhbF9sb3NzX3N1bSA9IDAuMAogICAgICAgIHZhbF9jb3JyZWN0ID0gMAogICAgICAgIHZhbF90b3RhbCA9IDAKICAgICAgICB3aXRoIHRvcmNoLm5vX2dyYWQoKToKICAgICAgICAgICAgZm9yIGltYWdlcywgbGFiZWxzIGluIHZhbF9sb2FkZXI6CiAgICAgICAgICAgICAgICBpbWFnZXMsIGxhYmVscyA9IGltYWdlcy50byhkZXZpY2UpLCBsYWJlbHMudG8oZGV2aWNlKQogICAgICAgICAgICAgICAgb3V0cHV0cyA9IG1vZGVsKGltYWdlcykKICAgICAgICAgICAgICAgIGxvc3MgPSBjcml0ZXJpb24ob3V0cHV0cywgbGFiZWxzKQogICAgICAgICAgICAgICAgdmFsX2xvc3Nfc3VtICs9IGxvc3MuaXRlbSgpICogaW1hZ2VzLnNpemUoMCkKICAgICAgICAgICAgICAgIHByZWRzID0gb3V0cHV0cy5hcmdtYXgoZGltPTEpCiAgICAgICAgICAgICAgICB2YWxfY29ycmVjdCArPSAocHJlZHMgPT0gbGFiZWxzKS5zdW0oKS5pdGVtKCkKICAgICAgICAgICAgICAgIHZhbF90b3RhbCArPSBpbWFnZXMuc2l6ZSgwKQoKICAgICAgICB2YWxfbG9zcyA9IHZhbF9sb3NzX3N1bSAvIHZhbF90b3RhbAogICAgICAgIHZhbF9hY2MgPSAxMDAuMCAqIHZhbF9jb3JyZWN0IC8gdmFsX3RvdGFsCgogICAgICAgIGVsYXBzZWQgPSB0aW1lLnRpbWUoKSAtIHQwCiAgICAgICAgcHJpbnQoZiJFcG9jaCB7ZXBvY2h9OiB0cmFpbl9sb3NzPXt0cmFpbl9sb3NzOi40Zn0gdHJhaW5fYWNjPXt0cmFpbl9hY2M6LjJmfSUgIgogICAgICAgICAgICAgIGYidmFsX2xvc3M9e3ZhbF9sb3NzOi40Zn0gdmFsX2FjYz17dmFsX2FjYzouMmZ9JSAoe2VsYXBzZWQ6LjFmfXMpIikKCiAgICAgICAgaGlzdG9yeS5hcHBlbmQoewogICAgICAgICAgICAiZXBvY2giOiBlcG9jaCwKICAgICAgICAgICAgInRyYWluTG9zcyI6IHJvdW5kKHRyYWluX2xvc3MsIDQpLAogICAgICAgICAgICAidHJhaW5BY2N1cmFjeSI6IHJvdW5kKHRyYWluX2FjYywgMiksCiAgICAgICAgICAgICJ2YWxMb3NzIjogcm91bmQodmFsX2xvc3MsIDQpLAogICAgICAgICAgICAidmFsQWNjdXJhY3kiOiByb3VuZCh2YWxfYWNjLCAyKSwKICAgICAgICB9KQoKICAgICAgICBpZiB2YWxfYWNjID4gYmVzdF92YWxfYWNjOgogICAgICAgICAgICBiZXN0X3ZhbF9hY2MgPSB2YWxfYWNjCiAgICAgICAgICAgIGJlc3RfZXBvY2ggPSBlcG9jaAogICAgICAgICAgICBiZXN0X3N0YXRlID0ge2s6IHYuY2xvbmUoKSBmb3IgaywgdiBpbiBtb2RlbC5zdGF0ZV9kaWN0KCkuaXRlbXMoKX0KCiAgICAjIEZpbmFsIHRlc3QgZXZhbHVhdGlvbiB1c2luZyB0aGUgTEFTVCBlcG9jaCdzIHdlaWdodHMgKHN0YW5kYXJkIHByYWN0aWNlOiByZXBvcnQKICAgICMgZmluYWwtbW9kZWwgdGVzdCBwZXJmb3JtYW5jZTsgdGhlIGJlc3QtY2hlY2twb2ludC1ieS12YWxpZGF0aW9uIGlzIGFsc28gc2F2ZWQpLgogICAgbW9kZWwuZXZhbCgpCiAgICB0ZXN0X2xvc3Nfc3VtID0gMC4wCiAgICB0ZXN0X2NvcnJlY3QgPSAwCiAgICB0ZXN0X3RvdGFsID0gMAogICAgcGVyX2NsYXNzX2NvcnJlY3QgPSBbMF0gKiAxMAogICAgcGVyX2NsYXNzX3RvdGFsID0gWzBdICogMTAKICAgIHdpdGggdG9yY2gubm9fZ3JhZCgpOgogICAgICAgIGZvciBpbWFnZXMsIGxhYmVscyBpbiB0ZXN0X2xvYWRlcjoKICAgICAgICAgICAgaW1hZ2VzLCBsYWJlbHMgPSBpbWFnZXMudG8oZGV2aWNlKSwgbGFiZWxzLnRvKGRldmljZSkKICAgICAgICAgICAgb3V0cHV0cyA9IG1vZGVsKGltYWdlcykKICAgICAgICAgICAgbG9zcyA9IGNyaXRlcmlvbihvdXRwdXRzLCBsYWJlbHMpCiAgICAgICAgICAgIHRlc3RfbG9zc19zdW0gKz0gbG9zcy5pdGVtKCkgKiBpbWFnZXMuc2l6ZSgwKQogICAgICAgICAgICBwcmVkcyA9IG91dHB1dHMuYXJnbWF4KGRpbT0xKQogICAgICAgICAgICB0ZXN0X2NvcnJlY3QgKz0gKHByZWRzID09IGxhYmVscykuc3VtKCkuaXRlbSgpCiAgICAgICAgICAgIHRlc3RfdG90YWwgKz0gaW1hZ2VzLnNpemUoMCkKICAgICAgICAgICAgZm9yIHAsIGwgaW4gemlwKHByZWRzLnRvbGlzdCgpLCBsYWJlbHMudG9saXN0KCkpOgogICAgICAgICAgICAgICAgcGVyX2NsYXNzX3RvdGFsW2xdICs9IDEKICAgICAgICAgICAgICAgIGlmIHAgPT0gbDoKICAgICAgICAgICAgICAgICAgICBwZXJfY2xhc3NfY29ycmVjdFtsXSArPSAxCgogICAgdGVzdF9sb3NzID0gdGVzdF9sb3NzX3N1bSAvIHRlc3RfdG90YWwKICAgIHRlc3RfYWNjID0gMTAwLjAgKiB0ZXN0X2NvcnJlY3QgLyB0ZXN0X3RvdGFsCiAgICBwZXJfY2xhc3NfYWNjID0gW3JvdW5kKDEwMC4wICogcGVyX2NsYXNzX2NvcnJlY3RbaV0gLyBwZXJfY2xhc3NfdG90YWxbaV0sIDIpIGZvciBpIGluIHJhbmdlKDEwKV0KCiAgICBwcmludChmIlxuRmluYWwgdGVzdDogbG9zcz17dGVzdF9sb3NzOi40Zn0gYWNjPXt0ZXN0X2FjYzouMmZ9JSBjb3JyZWN0PXt0ZXN0X2NvcnJlY3R9L3t0ZXN0X3RvdGFsfSIpCiAgICBwcmludCgiUGVyLWNsYXNzIGFjY3VyYWN5OiIsIHBlcl9jbGFzc19hY2MpCiAgICBwcmludChmIkJlc3QgdmFsaWRhdGlvbiBjaGVja3BvaW50OiBlcG9jaCB7YmVzdF9lcG9jaH0gKHZhbF9hY2M9e2Jlc3RfdmFsX2FjYzouMmZ9JSkiKQoKICAgIHRvcmNoLnNhdmUobW9kZWwuc3RhdGVfZGljdCgpLCAiZGV2L2FydGlmYWN0cy9jYW5vbmljYWxfbW9kZWxfZmluYWwucHQiKQogICAgdG9yY2guc2F2ZShiZXN0X3N0YXRlLCAiZGV2L2FydGlmYWN0cy9jYW5vbmljYWxfbW9kZWxfYmVzdC5wdCIpCgogICAgd2l0aCBvcGVuKCJkZXYvYXJ0aWZhY3RzL3RyYWluaW5nX3N1bW1hcnkuanNvbiIsICJ3IikgYXMgZjoKICAgICAgICBqc29uLmR1bXAoewogICAgICAgICAgICAic2VlZCI6IFNFRUQsCiAgICAgICAgICAgICJ0b3RhbFBhcmFtZXRlcnMiOiB0b3RhbF9wYXJhbXMsCiAgICAgICAgICAgICJoaXN0b3J5IjogaGlzdG9yeSwKICAgICAgICAgICAgImJlc3RFcG9jaCI6IGJlc3RfZXBvY2gsCiAgICAgICAgICAgICJiZXN0VmFsQWNjdXJhY3kiOiByb3VuZChiZXN0X3ZhbF9hY2MsIDIpLAogICAgICAgICAgICAiZmluYWxUZXN0IjogewogICAgICAgICAgICAgICAgImxvc3MiOiByb3VuZCh0ZXN0X2xvc3MsIDQpLAogICAgICAgICAgICAgICAgImFjY3VyYWN5Ijogcm91bmQodGVzdF9hY2MsIDIpLAogICAgICAgICAgICAgICAgImNvcnJlY3QiOiB0ZXN0X2NvcnJlY3QsCiAgICAgICAgICAgICAgICAiaW5jb3JyZWN0IjogdGVzdF90b3RhbCAtIHRlc3RfY29ycmVjdCwKICAgICAgICAgICAgICAgICJ0b3RhbCI6IHRlc3RfdG90YWwsCiAgICAgICAgICAgIH0sCiAgICAgICAgICAgICJwZXJDbGFzc0FjY3VyYWN5IjogcGVyX2NsYXNzX2FjYywKICAgICAgICB9LCBmLCBpbmRlbnQ9MikKCiAgICBwcmludCgiXG5TYXZlZDogZGV2L2FydGlmYWN0cy9jYW5vbmljYWxfbW9kZWxfZmluYWwucHQsIGNhbm9uaWNhbF9tb2RlbF9iZXN0LnB0LCB0cmFpbmluZ19zdW1tYXJ5Lmpzb24iKQoKCmlmIF9fbmFtZV9fID09ICJfX21haW5fXyI6CiAgICBtYWluKCkK";
+var EXPORT_SCRIPT_BASE64 = "IiIiCkRFVi1PTkxZIFNDUklQVC4gTm90IHBhcnQgb2YgdGhlIHNoaXBwZWQgcnVudGltZSBhcnRpZmFjdC4KClJlYWRzIHRoZSB0cmFpbmVkIGNhbm9uaWNhbCBtb2RlbCAoZGV2L2FydGlmYWN0cy9jYW5vbmljYWxfbW9kZWxfZmluYWwucHQpLCBhbmQgcHJvZHVjZXM6CiAgLSBkZXYvYXJ0aWZhY3RzL3dlaWdodHMuYmluICAgICAgICAocmF3IGZsb2F0MzIgbGl0dGxlLWVuZGlhbiBidWZmZXIsIGNhbm9uaWNhbCB0ZW5zb3Igb3JkZXIpCiAgLSBkZXYvYXJ0aWZhY3RzL3dlaWdodHNfYmFzZTY0LnR4dCAoYmFzZTY0IG9mIHRoZSBhYm92ZSwgZm9yIGVtYmVkZGluZyBpbiB0aGUgSFRNTCkKICAtIGRldi9hcnRpZmFjdHMvd2VpZ2h0c19tZXRhLmpzb24gICh0ZW5zb3IgbmFtZXMvc2hhcGVzL29mZnNldHMvY2hlY2tzdW0vZm9ybWF0IHZlcnNpb24pCiAgLSBkZXYvYXJ0aWZhY3RzL3NhbXBsZXMuYmluICAgICAgICAocmF3IHVpbnQ4IGJ1ZmZlciBvZiBjdXJhdGVkIE1OSVNUIFRFU1QgaW1hZ2VzLCA3ODQgYnl0ZXMgZWFjaCkKICAtIGRldi9hcnRpZmFjdHMvc2FtcGxlc19iYXNlNjQudHh0IChiYXNlNjQgb2YgdGhlIGFib3ZlKQogIC0gZGV2L2FydGlmYWN0cy9zYW1wbGVzX21ldGEuanNvbiAgKGxhYmVsLCBzb3VyY2UgaW5kZXgsIGNvcnJlY3RuZXNzL2RpZmZpY3VsdHkgdGFnIHBlciBzYW1wbGUpCiAgLSBkZXYvYXJ0aWZhY3RzL3JlZmVyZW5jZV9sb2dpdHMuanNvbiAoUHlUb3JjaCByZWZlcmVuY2UgbG9naXRzL3Byb2JhYmlsaXRpZXMgZm9yIGVhY2ggc2FtcGxlLAogICAgdXNlZCB0byB2YWxpZGF0ZSB0aGUgSmF2YVNjcmlwdCBpbmZlcmVuY2UgZW5naW5lIHdpdGhpbiBhIG51bWVyaWNhbCB0b2xlcmFuY2UpCiIiIgppbXBvcnQgYmFzZTY0CmltcG9ydCBqc29uCmltcG9ydCBzdHJ1Y3QKCmltcG9ydCBudW1weSBhcyBucAppbXBvcnQgdG9yY2gKaW1wb3J0IHRvcmNoLm5uIGFzIG5uCmltcG9ydCB0b3JjaHZpc2lvbgppbXBvcnQgdG9yY2h2aXNpb24udHJhbnNmb3JtcyBhcyBUCgpNTklTVF9NRUFOID0gMC4xMzA3Ck1OSVNUX1NURCA9IDAuMzA4MQoKCmNsYXNzIENvbnZCTlJlTFUobm4uTW9kdWxlKToKICAgIGRlZiBfX2luaXRfXyhzZWxmLCBpbl9jaCwgb3V0X2NoKToKICAgICAgICBzdXBlcigpLl9faW5pdF9fKCkKICAgICAgICBzZWxmLmNvbnYgPSBubi5Db252MmQoaW5fY2gsIG91dF9jaCwga2VybmVsX3NpemU9Mywgc3RyaWRlPTEsIHBhZGRpbmc9MSwgYmlhcz1GYWxzZSkKICAgICAgICBzZWxmLmJuID0gbm4uQmF0Y2hOb3JtMmQob3V0X2NoKQogICAgICAgIHNlbGYucmVsdSA9IG5uLlJlTFUoaW5wbGFjZT1UcnVlKQoKICAgIGRlZiBmb3J3YXJkKHNlbGYsIHgpOgogICAgICAgIHJldHVybiBzZWxmLnJlbHUoc2VsZi5ibihzZWxmLmNvbnYoeCkpKQoKCmNsYXNzIENhbm9uaWNhbENOTihubi5Nb2R1bGUpOgogICAgZGVmIF9faW5pdF9fKHNlbGYpOgogICAgICAgIHN1cGVyKCkuX19pbml0X18oKQogICAgICAgIHNlbGYuYmxvY2sxID0gQ29udkJOUmVMVSgxLCAzMikKICAgICAgICBzZWxmLmJsb2NrMiA9IENvbnZCTlJlTFUoMzIsIDMyKQogICAgICAgIHNlbGYucG9vbDEgPSBubi5NYXhQb29sMmQoMiwgMikKICAgICAgICBzZWxmLmJsb2NrMyA9IENvbnZCTlJlTFUoMzIsIDY0KQogICAgICAgIHNlbGYuYmxvY2s0ID0gQ29udkJOUmVMVSg2NCwgNjQpCiAgICAgICAgc2VsZi5wb29sMiA9IG5uLk1heFBvb2wyZCgyLCAyKQogICAgICAgIHNlbGYuZmMxID0gbm4uTGluZWFyKDY0ICogNyAqIDcsIDEyOCkKICAgICAgICBzZWxmLnJlbHVfZmMgPSBubi5SZUxVKGlucGxhY2U9VHJ1ZSkKICAgICAgICBzZWxmLmRyb3BvdXQgPSBubi5Ecm9wb3V0KDAuMzApCiAgICAgICAgc2VsZi5mYzIgPSBubi5MaW5lYXIoMTI4LCAxMCkKCiAgICBkZWYgZm9yd2FyZChzZWxmLCB4KToKICAgICAgICB4ID0gc2VsZi5ibG9jazEoeCkKICAgICAgICB4ID0gc2VsZi5ibG9jazIoeCkKICAgICAgICB4ID0gc2VsZi5wb29sMSh4KQogICAgICAgIHggPSBzZWxmLmJsb2NrMyh4KQogICAgICAgIHggPSBzZWxmLmJsb2NrNCh4KQogICAgICAgIHggPSBzZWxmLnBvb2wyKHgpCiAgICAgICAgeCA9IHRvcmNoLmZsYXR0ZW4oeCwgMSkKICAgICAgICB4ID0gc2VsZi5mYzEoeCkKICAgICAgICB4ID0gc2VsZi5yZWx1X2ZjKHgpCiAgICAgICAgeCA9IHNlbGYuZHJvcG91dCh4KQogICAgICAgIHggPSBzZWxmLmZjMih4KQogICAgICAgIHJldHVybiB4CgoKZGVmIGZudjFhKGRhdGE6IGJ5dGVzKSAtPiBpbnQ6CiAgICBoID0gMHg4MTFjOWRjNQogICAgZm9yIGIgaW4gZGF0YToKICAgICAgICBoIF49IGIKICAgICAgICBoID0gKGggKiAweDAxMDAwMTkzKSAmIDB4RkZGRkZGRkYKICAgIHJldHVybiBoCgoKZGVmIG1haW4oKToKICAgIG1vZGVsID0gQ2Fub25pY2FsQ05OKCkKICAgIHNkID0gdG9yY2gubG9hZCgiZGV2L2FydGlmYWN0cy9jYW5vbmljYWxfbW9kZWxfZmluYWwucHQiLCBtYXBfbG9jYXRpb249ImNwdSIpCiAgICBtb2RlbC5sb2FkX3N0YXRlX2RpY3Qoc2QpCiAgICBtb2RlbC5ldmFsKCkKCiAgICAjIC0tLS0gMS4gRmxhdHRlbiB3ZWlnaHRzIGludG8gb25lIGNhbm9uaWNhbC1vcmRlciBmbG9hdDMyIGJ1ZmZlciAtLS0tCiAgICBwbGFuID0gWwogICAgICAgICgiY29udjEud2VpZ2h0Iiwgc2RbImJsb2NrMS5jb252LndlaWdodCJdKSwKICAgICAgICAoImJuMS5nYW1tYSIsIHNkWyJibG9jazEuYm4ud2VpZ2h0Il0pLCAoImJuMS5iZXRhIiwgc2RbImJsb2NrMS5ibi5iaWFzIl0pLAogICAgICAgICgiYm4xLnJ1bm5pbmdfbWVhbiIsIHNkWyJibG9jazEuYm4ucnVubmluZ19tZWFuIl0pLCAoImJuMS5ydW5uaW5nX3ZhciIsIHNkWyJibG9jazEuYm4ucnVubmluZ192YXIiXSksCgogICAgICAgICgiY29udjIud2VpZ2h0Iiwgc2RbImJsb2NrMi5jb252LndlaWdodCJdKSwKICAgICAgICAoImJuMi5nYW1tYSIsIHNkWyJibG9jazIuYm4ud2VpZ2h0Il0pLCAoImJuMi5iZXRhIiwgc2RbImJsb2NrMi5ibi5iaWFzIl0pLAogICAgICAgICgiYm4yLnJ1bm5pbmdfbWVhbiIsIHNkWyJibG9jazIuYm4ucnVubmluZ19tZWFuIl0pLCAoImJuMi5ydW5uaW5nX3ZhciIsIHNkWyJibG9jazIuYm4ucnVubmluZ192YXIiXSksCgogICAgICAgICgiY29udjMud2VpZ2h0Iiwgc2RbImJsb2NrMy5jb252LndlaWdodCJdKSwKICAgICAgICAoImJuMy5nYW1tYSIsIHNkWyJibG9jazMuYm4ud2VpZ2h0Il0pLCAoImJuMy5iZXRhIiwgc2RbImJsb2NrMy5ibi5iaWFzIl0pLAogICAgICAgICgiYm4zLnJ1bm5pbmdfbWVhbiIsIHNkWyJibG9jazMuYm4ucnVubmluZ19tZWFuIl0pLCAoImJuMy5ydW5uaW5nX3ZhciIsIHNkWyJibG9jazMuYm4ucnVubmluZ192YXIiXSksCgogICAgICAgICgiY29udjQud2VpZ2h0Iiwgc2RbImJsb2NrNC5jb252LndlaWdodCJdKSwKICAgICAgICAoImJuNC5nYW1tYSIsIHNkWyJibG9jazQuYm4ud2VpZ2h0Il0pLCAoImJuNC5iZXRhIiwgc2RbImJsb2NrNC5ibi5iaWFzIl0pLAogICAgICAgICgiYm40LnJ1bm5pbmdfbWVhbiIsIHNkWyJibG9jazQuYm4ucnVubmluZ19tZWFuIl0pLCAoImJuNC5ydW5uaW5nX3ZhciIsIHNkWyJibG9jazQuYm4ucnVubmluZ192YXIiXSksCgogICAgICAgICgiZmMxLndlaWdodCIsIHNkWyJmYzEud2VpZ2h0Il0pLCAoImZjMS5iaWFzIiwgc2RbImZjMS5iaWFzIl0pLAogICAgICAgICgiZmMyLndlaWdodCIsIHNkWyJmYzIud2VpZ2h0Il0pLCAoImZjMi5iaWFzIiwgc2RbImZjMi5iaWFzIl0pLAogICAgXQoKICAgIGJ1ZiA9IGJ5dGVhcnJheSgpCiAgICB0ZW5zb3JfbWV0YSA9IFtdCiAgICBvZmZzZXQgPSAwCiAgICBmb3IgbmFtZSwgdGVuc29yIGluIHBsYW46CiAgICAgICAgYXJyID0gdGVuc29yLmRldGFjaCgpLmNwdSgpLm51bXB5KCkuYXN0eXBlKCI8ZjQiKQogICAgICAgIGZsYXQgPSBhcnIucmVzaGFwZSgtMSkKICAgICAgICBidWYgKz0gZmxhdC50b2J5dGVzKCkKICAgICAgICB0ZW5zb3JfbWV0YS5hcHBlbmQoewogICAgICAgICAgICAibmFtZSI6IG5hbWUsCiAgICAgICAgICAgICJzaGFwZSI6IGxpc3QoYXJyLnNoYXBlKSwKICAgICAgICAgICAgIm9mZnNldEZsb2F0cyI6IG9mZnNldCwKICAgICAgICAgICAgImNvdW50RmxvYXRzIjogaW50KGZsYXQuc2l6ZSksCiAgICAgICAgfSkKICAgICAgICBvZmZzZXQgKz0gaW50KGZsYXQuc2l6ZSkKCiAgICB3ZWlnaHRzX2J5dGVzID0gYnl0ZXMoYnVmKQogICAgY2hlY2tzdW0gPSBmbnYxYSh3ZWlnaHRzX2J5dGVzKQoKICAgIHdpdGggb3BlbigiZGV2L2FydGlmYWN0cy93ZWlnaHRzLmJpbiIsICJ3YiIpIGFzIGY6CiAgICAgICAgZi53cml0ZSh3ZWlnaHRzX2J5dGVzKQogICAgd2l0aCBvcGVuKCJkZXYvYXJ0aWZhY3RzL3dlaWdodHNfYmFzZTY0LnR4dCIsICJ3IikgYXMgZjoKICAgICAgICBmLndyaXRlKGJhc2U2NC5iNjRlbmNvZGUod2VpZ2h0c19ieXRlcykuZGVjb2RlKCJhc2NpaSIpKQoKICAgIG1ldGEgPSB7CiAgICAgICAgImZvcm1hdFZlcnNpb24iOiAxLAogICAgICAgICJkdHlwZSI6ICJmbG9hdDMyIiwKICAgICAgICAiYnl0ZU9yZGVyIjogImxpdHRsZSIsCiAgICAgICAgInRvdGFsRmxvYXRzIjogb2Zmc2V0LAogICAgICAgICJ0b3RhbEJ5dGVzIjogbGVuKHdlaWdodHNfYnl0ZXMpLAogICAgICAgICJjaGVja3N1bUZOVjFhIjogY2hlY2tzdW0sCiAgICAgICAgInRyYWluYWJsZVBhcmFtZXRlckNvdW50IjogNDY4MDEwLAogICAgICAgICJ0ZW5zb3JzIjogdGVuc29yX21ldGEsCiAgICAgICAgImFyY2hpdGVjdHVyZUlkIjogImNhbm9uaWNhbC0zMi02NCIsCiAgICAgICAgInRyYWluZWRXaXRoIjogewogICAgICAgICAgICAib3B0aW1pemVyIjogImFkYW0iLCAibGVhcm5pbmdSYXRlIjogMC4wMDEsICJlcG9jaHMiOiA1LCAiYmF0Y2hTaXplIjogMTI4LAogICAgICAgICAgICAiZHJvcG91dCI6IDAuMzAsICJ3ZWlnaHREZWNheSI6IDAuMDAwMSwgInNlZWQiOiA0MgogICAgICAgIH0sCiAgICB9CiAgICB3aXRoIG9wZW4oImRldi9hcnRpZmFjdHMvd2VpZ2h0c19tZXRhLmpzb24iLCAidyIpIGFzIGY6CiAgICAgICAganNvbi5kdW1wKG1ldGEsIGYsIGluZGVudD0yKQoKICAgIHByaW50KGYiV2VpZ2h0czoge2xlbih3ZWlnaHRzX2J5dGVzKX0gYnl0ZXMgKHtvZmZzZXR9IGZsb2F0cyksIGNoZWNrc3VtPTB4e2NoZWNrc3VtOjA4eH0iKQoKICAgICMgLS0tLSAyLiBDdXJhdGVkIGJ1bmRsZWQgc2FtcGxlIGRpZ2l0cyBmcm9tIHRoZSBURVNUIHNldCAoZ2VudWluZWx5IHVuc2VlbiBieSB0cmFpbmluZykgLS0tLQogICAgdHJhbnNmb3JtID0gVC5Db21wb3NlKFtULlRvVGVuc29yKCksIFQuTm9ybWFsaXplKChNTklTVF9NRUFOLCksIChNTklTVF9TVEQsKSldKQogICAgdGVzdF9zZXQgPSB0b3JjaHZpc2lvbi5kYXRhc2V0cy5NTklTVChyb290PSIvdG1wL21uaXN0X2RhdGEiLCB0cmFpbj1GYWxzZSwgZG93bmxvYWQ9VHJ1ZSwgdHJhbnNmb3JtPXRyYW5zZm9ybSkKICAgIHJhd190ZXN0ID0gdG9yY2h2aXNpb24uZGF0YXNldHMuTU5JU1Qocm9vdD0iL3RtcC9tbmlzdF9kYXRhIiwgdHJhaW49RmFsc2UsIGRvd25sb2FkPVRydWUsIHRyYW5zZm9ybT1Ob25lKQoKICAgICMgRmluZCBvbmUgY29uZmlkZW50bHktY29ycmVjdCBleGFtcGxlIHBlciBkaWdpdCwgcGx1cyBhIGNvdXBsZSBvZiBoYXJkZXIvbWlzY2xhc3NpZmllZCBvbmVzLgogICAgY2hvc2VuID0ge30KICAgIGhhcmRfZXhhbXBsZXMgPSBbXQogICAgd2l0aCB0b3JjaC5ub19ncmFkKCk6CiAgICAgICAgZm9yIGlkeCBpbiByYW5nZShsZW4odGVzdF9zZXQpKToKICAgICAgICAgICAgaW1hZ2UsIGxhYmVsID0gdGVzdF9zZXRbaWR4XQogICAgICAgICAgICBsb2dpdHMgPSBtb2RlbChpbWFnZS51bnNxdWVlemUoMCkpCiAgICAgICAgICAgIHByb2JzID0gdG9yY2guc29mdG1heChsb2dpdHMsIGRpbT0xKVswXQogICAgICAgICAgICBwcmVkID0gaW50KHByb2JzLmFyZ21heCgpKQogICAgICAgICAgICBjb25mID0gZmxvYXQocHJvYnNbcHJlZF0pCiAgICAgICAgICAgIGlmIGxhYmVsIG5vdCBpbiBjaG9zZW4gYW5kIHByZWQgPT0gbGFiZWwgYW5kIGNvbmYgPiAwLjk5OgogICAgICAgICAgICAgICAgY2hvc2VuW2xhYmVsXSA9IGlkeAogICAgICAgICAgICBlbGlmIHByZWQgIT0gbGFiZWwgYW5kIGxlbihoYXJkX2V4YW1wbGVzKSA8IDQ6CiAgICAgICAgICAgICAgICBoYXJkX2V4YW1wbGVzLmFwcGVuZChpZHgpCiAgICAgICAgICAgIGlmIGxlbihjaG9zZW4pID09IDEwIGFuZCBsZW4oaGFyZF9leGFtcGxlcykgPj0gNDoKICAgICAgICAgICAgICAgIGJyZWFrCgogICAgc2FtcGxlX2luZGljZXMgPSBbY2hvc2VuW2RdIGZvciBkIGluIHJhbmdlKDEwKV0gKyBoYXJkX2V4YW1wbGVzCiAgICBzYW1wbGVfYnVmID0gYnl0ZWFycmF5KCkKICAgIHNhbXBsZV9tZXRhID0gW10KICAgIHJlZmVyZW5jZSA9IFtdCgogICAgd2l0aCB0b3JjaC5ub19ncmFkKCk6CiAgICAgICAgZm9yIGksIGlkeCBpbiBlbnVtZXJhdGUoc2FtcGxlX2luZGljZXMpOgogICAgICAgICAgICBwaWxfaW1nLCB0cnVlX2xhYmVsID0gcmF3X3Rlc3RbaWR4XQogICAgICAgICAgICBhcnIgPSBucC5hcnJheShwaWxfaW1nLCBkdHlwZT1ucC51aW50OCkgICMgMjh4MjgsIDAtMjU1CiAgICAgICAgICAgIHNhbXBsZV9idWYgKz0gYXJyLnRvYnl0ZXMoKQoKICAgICAgICAgICAgaW1hZ2VfdCwgXyA9IHRlc3Rfc2V0W2lkeF0KICAgICAgICAgICAgbG9naXRzID0gbW9kZWwoaW1hZ2VfdC51bnNxdWVlemUoMCkpCiAgICAgICAgICAgIHByb2JzID0gdG9yY2guc29mdG1heChsb2dpdHMsIGRpbT0xKVswXQogICAgICAgICAgICBwcmVkID0gaW50KHByb2JzLmFyZ21heCgpKQogICAgICAgICAgICBpc19oYXJkID0gaWR4IGluIGhhcmRfZXhhbXBsZXMKCiAgICAgICAgICAgIHNhbXBsZV9tZXRhLmFwcGVuZCh7CiAgICAgICAgICAgICAgICAiaW5kZXgiOiBpLCAic291cmNlVGVzdEluZGV4IjogaWR4LCAidHJ1ZUxhYmVsIjogaW50KHRydWVfbGFiZWwpLAogICAgICAgICAgICAgICAgInRhZyI6ICJkaWZmaWN1bHQiIGlmIGlzX2hhcmQgZWxzZSAidHlwaWNhbCIsCiAgICAgICAgICAgICAgICAia2luZCI6ICJyZWNvcmRlZCIsCiAgICAgICAgICAgIH0pCiAgICAgICAgICAgIHJlZmVyZW5jZS5hcHBlbmQoewogICAgICAgICAgICAgICAgImluZGV4IjogaSwgInRydWVMYWJlbCI6IGludCh0cnVlX2xhYmVsKSwgInByZWRpY3RlZExhYmVsIjogcHJlZCwKICAgICAgICAgICAgICAgICJsb2dpdHMiOiBbcm91bmQoZmxvYXQoeCksIDYpIGZvciB4IGluIGxvZ2l0c1swXS50b2xpc3QoKV0sCiAgICAgICAgICAgICAgICAicHJvYmFiaWxpdGllcyI6IFtyb3VuZChmbG9hdCh4KSwgNikgZm9yIHggaW4gcHJvYnMudG9saXN0KCldLAogICAgICAgICAgICB9KQoKICAgIHdpdGggb3BlbigiZGV2L2FydGlmYWN0cy9zYW1wbGVzLmJpbiIsICJ3YiIpIGFzIGY6CiAgICAgICAgZi53cml0ZShieXRlcyhzYW1wbGVfYnVmKSkKICAgIHdpdGggb3BlbigiZGV2L2FydGlmYWN0cy9zYW1wbGVzX2Jhc2U2NC50eHQiLCAidyIpIGFzIGY6CiAgICAgICAgZi53cml0ZShiYXNlNjQuYjY0ZW5jb2RlKGJ5dGVzKHNhbXBsZV9idWYpKS5kZWNvZGUoImFzY2lpIikpCiAgICB3aXRoIG9wZW4oImRldi9hcnRpZmFjdHMvc2FtcGxlc19tZXRhLmpzb24iLCAidyIpIGFzIGY6CiAgICAgICAganNvbi5kdW1wKHsiY291bnQiOiBsZW4oc2FtcGxlX21ldGEpLCAiaW1hZ2VTaXplIjogMjgsICJzYW1wbGVzIjogc2FtcGxlX21ldGF9LCBmLCBpbmRlbnQ9MikKICAgIHdpdGggb3BlbigiZGV2L2FydGlmYWN0cy9yZWZlcmVuY2VfbG9naXRzLmpzb24iLCAidyIpIGFzIGY6CiAgICAgICAganNvbi5kdW1wKHJlZmVyZW5jZSwgZiwgaW5kZW50PTIpCgogICAgcHJpbnQoZiJTYW1wbGVzOiB7bGVuKHNhbXBsZV9pbmRpY2VzKX0gaW1hZ2VzICh7bGVuKHNhbXBsZV9idWYpfSBieXRlcykiKQogICAgZm9yIHIgaW4gcmVmZXJlbmNlOgogICAgICAgIHByaW50KGYiICBzYW1wbGUge3JbJ2luZGV4J119OiB0cnVlPXtyWyd0cnVlTGFiZWwnXX0gcHJlZD17clsncHJlZGljdGVkTGFiZWwnXX0iKQoKCmlmIF9fbmFtZV9fID09ICJfX21haW5fXyI6CiAgICBtYWluKCkK";
+var TRAINING_SUMMARY_TEXT_LITERAL = {
+  "seed": 42,
+  "totalParameters": 468010,
+  "history": [
+    {
+      "epoch": 1,
+      "trainLoss": 0.1545,
+      "trainAccuracy": 95.32,
+      "valLoss": 0.0465,
+      "valAccuracy": 98.7
+    },
+    {
+      "epoch": 2,
+      "trainLoss": 0.0541,
+      "trainAccuracy": 98.35,
+      "valLoss": 0.0402,
+      "valAccuracy": 98.83
+    },
+    {
+      "epoch": 3,
+      "trainLoss": 0.041,
+      "trainAccuracy": 98.73,
+      "valLoss": 0.0374,
+      "valAccuracy": 98.95
+    },
+    {
+      "epoch": 4,
+      "trainLoss": 0.0325,
+      "trainAccuracy": 98.99,
+      "valLoss": 0.0345,
+      "valAccuracy": 99.03
+    },
+    {
+      "epoch": 5,
+      "trainLoss": 0.0289,
+      "trainAccuracy": 99.1,
+      "valLoss": 0.0335,
+      "valAccuracy": 99.12
+    }
+  ],
+  "bestEpoch": 5,
+  "bestValAccuracy": 99.12,
+  "finalTest": {
+    "loss": 0.0211,
+    "accuracy": 99.31,
+    "correct": 9931,
+    "incorrect": 69,
+    "total": 10000
+  },
+  "perClassAccuracy": [
+    99.69,
+    99.82,
+    99.52,
+    99.7,
+    99.8,
+    98.99,
+    98.75,
+    99.32,
+    99.08,
+    98.32
+  ]
+};
+
+var DevScripts = { trainScriptText:null, exportScriptText:null, trainingSummaryText:null, ok:false };
+function decodeDevScripts(){
+  try{
+    var dec = new TextDecoder("utf-8");
+    DevScripts.trainScriptText = dec.decode(base64ToBytes(TRAIN_SCRIPT_BASE64));
+    DevScripts.exportScriptText = dec.decode(base64ToBytes(EXPORT_SCRIPT_BASE64));
+    DevScripts.trainingSummaryText = JSON.stringify(TRAINING_SUMMARY_TEXT_LITERAL, null, 2);
+    DevScripts.ok = true;
+  } catch(e){
+    console.warn("CNN Learning Lab: could not decode embedded dev scripts.", e);
+    DevScripts.ok = false;
+  }
+}
+
 /* ---- Pure-JavaScript forward inference operations (Float32Array based) ---- */
 var NN = {};
 
@@ -4901,6 +5123,7 @@ function computeAndStorePrediction(tensor, pre){
   var top3 = topKPredictions(out.probabilities, 3);
   Views.predict._lastResult = { logits:out.logits, probabilities:out.probabilities, top3:top3, featureMaps:out.featureMaps, elapsedMs:elapsed, warnings: pre.warnings, trueLabel: pre.trueLabel };
   AppState.diagnostics.playgroundUses++;
+  Sound.predictDone();
   grantAchievement("cnn_architect");
   renderContextPanel();
 }
@@ -5115,10 +5338,13 @@ CodeGen.sections = function(layers, hp, beginner){
     "test_loader = DataLoader(test_set, batch_size=256, shuffle=False)"
   ].join("\n");
 
+  var optimizerLine = hp.optimizer==="sgd"
+    ? "optimizer = torch.optim.SGD(model.parameters(), lr="+hp.learningRate+", momentum=0.9, weight_decay="+hp.weightDecay+")"
+    : "optimizer = torch.optim.Adam(model.parameters(), lr="+hp.learningRate+", weight_decay="+hp.weightDecay+")";
   s.lossOptim = [
     "model = Net()",
     "criterion = nn.CrossEntropyLoss()",
-    "optimizer = torch.optim.Adam(model.parameters(), lr="+hp.learningRate+", weight_decay="+hp.weightDecay+")"
+    optimizerLine
   ].join("\n");
 
   s.trainingLoop = [
@@ -5177,7 +5403,7 @@ CodeGen.sections = function(layers, hp, beginner){
 
 var CODE_CLICKABLE_TOKENS = {
   "Conv2d":"convolution", "BatchNorm2d":"batch_normalization", "ReLU":"relu", "MaxPool2d":"max_pooling",
-  "Dropout":"dropout", "Linear":"dense_layer", "Adam":"adam", "lr=":"learning_rate", "CrossEntropyLoss":"cross_entropy",
+  "Dropout":"dropout", "Linear":"dense_layer", "Adam":"adam", "SGD":"sgd", "lr=":"learning_rate", "CrossEntropyLoss":"cross_entropy",
   "softmax":"softmax", "backward()":"backpropagation", "zero_grad()":"gradient", "flatten":"flatten",
   "weight_decay":"weight_decay", "argmax":"predicted_class", "no_grad":"inference", "train()":"training_mode", "eval()":"evaluation_mode"
 };
@@ -5297,7 +5523,7 @@ Views.code = { _mode:"beginner", render:function(container){
 
   var sec = CodeGen.sections(layers, hp, beginner);
   [["Imports & configuration","imports"],["Data transforms","transforms"],["Dataset & DataLoaders","data"],
-   ["Loss & Adam optimizer","lossOptim"],["Training loop","trainingLoop"],["Validation loop","validationLoop"],
+   ["Loss & "+(hp.optimizer==="sgd"?"SGD":"Adam")+" optimizer","lossOptim"],["Training loop","trainingLoop"],["Validation loop","validationLoop"],
    ["Checkpointing","checkpoint"],["Test evaluation","testEval"],["Single-image inference","singleInference"]].forEach(function(pair){
     var b = el("div",{class:"panel-section"});
     b.appendChild(el("div",{class:"hstack"},[el("h4",{style:"margin:0;"},[pair[0]]), el("button",{class:"btn btn-sm", type:"button", onClick:function(){ copyText(sec[pair[1]]); }},["Copy section"])]));
@@ -5641,6 +5867,23 @@ SelfTest.run = function(){
     check("JS inference validated against PyTorch reference logits", false, "Skipped — embedded weights or samples unavailable.");
   }
 
+  check("Confusion matrix is a real 10×10 table summing to 10,000", (function(){
+    var m = EDU.confusionMatrix;
+    if (!m || m.length!==10) return false;
+    var sum = 0;
+    for (var r=0;r<10;r++){ if (!m[r] || m[r].length!==10) return false; for (var c=0;c<10;c++) sum += m[r][c]; }
+    return sum===10000;
+  })());
+
+  check("Generated PyTorch emits torch.optim.SGD when SGD is selected", (function(){
+    var sgdHp = Object.assign({}, EDU.hyperparamDefaults, { optimizer:"sgd", learningRate:0.01 });
+    var src = buildFullPySource(canon.layers, sgdHp, false);
+    return src.indexOf("torch.optim.SGD")>=0 && src.indexOf("momentum=0.9")>=0;
+  })());
+
+  check("Embedded dev scripts (training/export) decode for the transparency panel", DevScripts.ok && !!DevScripts.trainScriptText && !!DevScripts.exportScriptText,
+    DevScripts.ok ? "" : "Skipped/failed — dev-script blobs unavailable.");
+
   var pass = results.filter(function(r){return r.pass;}).length;
   return { pass: pass, total: results.length, results: results, allPassed: pass===results.length };
 };
@@ -5664,6 +5907,11 @@ function openSettingsDialog(){
       (function(){ var cb=el("input",{type:"checkbox"}); cb.checked=AppState.a11y.reducedMotion;
         cb.addEventListener("change", function(){ A11y.setReducedMotion(cb.checked); }); return cb; })(),
       "Reduce motion (also follows your system setting automatically)"
+    ]),
+    el("label",{class:"hstack small"},[
+      (function(){ var cb=el("input",{type:"checkbox"}); cb.checked=AppState.a11y.soundEnabled;
+        cb.addEventListener("change", function(){ AppState.a11y.soundEnabled=cb.checked; Persistence.save(); if(cb.checked) Sound.correct(); }); return cb; })(),
+      "Sound effects (short chimes for achievements, challenge answers, and predictions — muted by default)"
     ])
   ]));
 
@@ -5708,6 +5956,25 @@ function openSettingsDialog(){
         return input;
       })()
     ])
+  ]));
+
+  body.appendChild(el("div",{class:"panel-section"},[
+    el("h4",{},["Model provenance"]),
+    el("p",{class:"small"},["The embedded prediction model was trained once, offline — it never trains inside your browser. Here's exactly how, for transparency:"]),
+    (function(){
+      var tw = WEIGHTS_META && WEIGHTS_META.trainedWith;
+      if (!tw) return el("p",{class:"tiny"},["(training metadata unavailable)"]);
+      return el("p",{class:"mono tiny"},[
+        "optimizer="+tw.optimizer+", lr="+tw.learningRate+", epochs="+tw.epochs+", batch_size="+tw.batchSize+
+        ", dropout="+tw.dropout+", weight_decay="+tw.weightDecay+", seed="+tw.seed
+      ]);
+    })(),
+    el("div",{class:"hstack"},[
+      el("button",{class:"btn btn-sm", type:"button", disabled: !DevScripts.ok, onClick:function(){ downloadTextFile("train_model.py", DevScripts.trainScriptText); }},["Download training script (.py)"]),
+      el("button",{class:"btn btn-sm", type:"button", disabled: !DevScripts.ok, onClick:function(){ downloadTextFile("export_weights.py", DevScripts.exportScriptText); }},["Download export script (.py)"]),
+      el("button",{class:"btn btn-sm", type:"button", disabled: !DevScripts.ok, onClick:function(){ downloadTextFile("training_log.json", DevScripts.trainingSummaryText); }},["Download training log (.json)"])
+    ]),
+    el("p",{class:"tiny"},["These are provided for transparency only — downloading them does not retrain anything in your browser, and running them yourself requires Python and PyTorch on your own machine."])
   ]));
 
   body.appendChild(el("div",{class:"panel-section"},[
@@ -5804,6 +6071,7 @@ function bootstrap(){
   try{
     decodeEmbeddedWeights();
     decodeSampleDigits();
+    decodeDevScripts();
 
     var loadResult = Persistence.load();
     A11y.applyReducedMotion();
