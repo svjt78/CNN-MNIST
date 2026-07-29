@@ -1798,6 +1798,37 @@ function redoPlayground(){
   return true;
 }
 
+// Every lab view (Views.train, Views.predict, Views.conv, ...) keeps its own transient
+// UI state directly on the view object as underscore-prefixed properties (current epoch,
+// drawn strokes, last prediction, stepper position, etc.) so it survives re-renders.
+// That state lives outside AppState on purpose, but it means a "reset" that only touches
+// AppState.playground would leave every lab showing stale data from before the reset.
+// VIEW_INITIAL_STATE snapshots each view's starting values once at boot so they can be
+// restored later.
+var VIEW_INITIAL_STATE = {};
+function deepCloneSimple(v){
+  if (Array.isArray(v)) return v.map(deepCloneSimple);
+  if (v && typeof v==="object") { var o={}; Object.keys(v).forEach(function(k){ o[k]=deepCloneSimple(v[k]); }); return o; }
+  return v;
+}
+function captureViewInitialState(){
+  Object.keys(Views).forEach(function(name){
+    var snap = {};
+    Object.keys(Views[name]).forEach(function(k){
+      if (k.charAt(0)==="_") snap[k] = deepCloneSimple(Views[name][k]);
+    });
+    VIEW_INITIAL_STATE[name] = snap;
+  });
+}
+function resetViewEphemeralState(){
+  if (typeof trainPlayTimer!=="undefined" && trainPlayTimer) clearInterval(trainPlayTimer);
+  if (typeof convPlayTimer!=="undefined" && convPlayTimer) clearInterval(convPlayTimer);
+  Object.keys(VIEW_INITIAL_STATE).forEach(function(name){
+    var snap = VIEW_INITIAL_STATE[name];
+    Object.keys(snap).forEach(function(k){ Views[name][k] = deepCloneSimple(snap[k]); });
+  });
+}
+
 function resetPlaygroundToCanonical(){
   var canon = Engine.buildCanonical();
   AppState.playground.layers = Engine.cloneLayers(canon.layers);
@@ -1805,6 +1836,10 @@ function resetPlaygroundToCanonical(){
   AppState.playground.hyperparameters = Object.assign({}, EDU.hyperparamDefaults);
   AppState.playground.history = [];
   AppState.playground.future = [];
+  AppState.playground.pixelGrid = null;
+  AppState.playground.selectedSampleIndex = 0;
+  AppState.runtime.selectedLayerId = null;
+  resetViewEphemeralState();
 }
 
 /* =========================================================================
@@ -2438,13 +2473,15 @@ function ensurePixelGrid(){
   return AppState.playground.pixelGrid;
 }
 
-Views.pixel = { render:function(container){
+Views.pixel = {
+  _showNormalized:false, _brush:1, _mode:"paint", _inspected:{ row:5, col:5 }, _undoStack:[],
+  render:function(container){
   var grid = ensurePixelGrid();
-  var showNormalized = Views.pixel._showNormalized || false;
-  var brush = Views.pixel._brush || 1;
-  var mode = Views.pixel._mode || "paint";
-  var inspected = Views.pixel._inspected || { row:5, col:5 };
-  var undoStack = Views.pixel._undoStack || (Views.pixel._undoStack = []);
+  var showNormalized = Views.pixel._showNormalized;
+  var brush = Views.pixel._brush;
+  var mode = Views.pixel._mode;
+  var inspected = Views.pixel._inspected;
+  var undoStack = Views.pixel._undoStack;
 
   container.appendChild(el("h3",{},["Pixel & Normalization Laboratory"]));
   container.appendChild(el("p",{class:"small"},[
@@ -5944,7 +5981,7 @@ function openSettingsDialog(){
         }
       }},["Reset Guided Mission progress"]),
       el("button",{class:"btn btn-sm", type:"button", onClick:function(){
-        if (window.confirm("Reset the Playground architecture and hyperparameters to canonical? Mission progress will be kept.")){
+        if (window.confirm("Reset the Playground — architecture, hyperparameters, and every lab's current state (drawing, training progress, etc.) — back to fresh? Mission progress will be kept.")){
           resetPlaygroundToCanonical(); Persistence.save(); renderContextPanel(); showToast("Playground reset to canonical CNN.");
         }
       }},["Reset Playground"]),
@@ -6088,6 +6125,7 @@ function hideStartup(){
    ========================================================================= */
 function bootstrap(){
   try{
+    captureViewInitialState();
     decodeEmbeddedWeights();
     decodeSampleDigits();
     decodeDevScripts();
