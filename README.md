@@ -110,26 +110,26 @@ else. Internally it's split into 20 labeled regions (search the file for `REGION
 
 | Region | Contents | Roughly at line |
 |---:|---|---:|
-| 1 | Semantic HTML structure (nav, architecture canvas, context panel, action bar, explanation dialog) | 331 |
+| 1 | Semantic HTML structure (nav, architecture canvas, context panel, action bar, explanation dialog) | 356 |
 | 2 | Design tokens & CSS (color roles, layout, responsive rules, reduced motion) | 10 |
-| 3 | Embedded educational data (`EDU`: normalization constants, dataset split, canonical + comparison training traces, filter presets, achievements) | 445 |
-| 4 | Concept registry (`CONCEPTS`, `CONCEPT_INDEX`, `getConcept`) — all 74 required concepts | 616 |
-| 5 | Canonical architecture definition (`buildCanonicalLayers`, `CANONICAL_TOTAL_PARAMETERS`) | 1364 |
-| 6 | State store (`AppState`, `defaultState`, undo/redo, mission/playground separation) | 1651 |
-| 7 / 8 | Shape & parameter engine + validator (`Engine.propagateLayer`, `Engine.propagateArchitecture`, `Engine.repairFlattenDenseMismatch`, `Engine.groupStages` for the Illustrated Diagram) | 1444 |
-| 9 | Guided Mission controller (`MISSION_CONTENT`, `renderMissionBody`, incremental reveal, repair challenge) | 5322 |
-| 10 | Rendering helpers: architecture canvas (`renderArchitectureCanvas`, `renderIllustratedDiagram`) + explanation panel (`openExplanation`, `renderExplanation`) | 1945 |
-| 11 | The 7 laboratories + Predict + Builder + Challenges (each a `Views.<name>` object) | 2335–4980 |
-| 12 | Training-trace engine + Training Simulator view (`Views.train`, `lineChart`, `renderLearningRateLandscape`, `renderDatasetEvaluationSection`) | 3296 |
-| 13 | Drawing / preprocessing (`preprocessDrawing`, bounding box → crop → resize → center-of-mass centering → normalize) | 4586 |
-| 14 | Inference engine + embedded weights (`NN.*` pure-JS ops, `decodeEmbeddedWeights`, `ModelWeights`) | 3640 |
-| 15 | PyTorch code generator (`CodeGen`, `buildFullPySource`, clickable-token highlighting) | 5002 |
-| 16 | Persistence (`Persistence.save/load/clearAll/exportProject/importProject`) | 1768 |
-| 17 | Accessibility helpers (`A11y`, DOM helpers `el`/`clearNode`, toasts) | 1890 |
-| 17b | Sound (`Sound.playTone`/`correct`/`incorrect`/`achievement`/`predictDone` — Web Audio API, synthesized, muted by default) | 1934 |
-| 18 | View router (`Views`, `Router.goToView`) + Settings dialog + top-nav/startup event binding | 2217, 5650 |
-| 19 | Internal self-tests (`SelfTest.run`, exposed as `window.CNNLabSelfTest`) | 5557 |
-| 20 | Application bootstrap (`bootstrap()`, wired to `DOMContentLoaded`) | 5801 |
+| 3 | Embedded educational data (`EDU`: normalization constants, dataset split, canonical + comparison training traces, filter presets, achievements) | 471 |
+| 4 | Concept registry (`CONCEPTS`, `CONCEPT_INDEX`, `getConcept`) — 76 concepts, covering every one required plus a couple extra | 662 |
+| 5 | Canonical architecture definition (`buildCanonicalLayers`, `CANONICAL_TOTAL_PARAMETERS`) | 1412 |
+| 6 | State store (`AppState`, `defaultState`, undo/redo, mission/playground separation) | 1724 |
+| 7 / 8 | Shape & parameter engine + validator (`Engine.propagateLayer`, `Engine.propagateArchitecture`, `Engine.repairFlattenDenseMismatch`, `Engine.groupStages` for the Illustrated Diagram) | 1492 |
+| 9 | Guided Mission controller (`MISSION_CONTENT`, `renderMissionBody`, incremental reveal, repair challenge) — Builder engine helpers cross-referenced here too | 5902, 3414 |
+| 10 | Rendering helpers: architecture canvas (`renderArchitectureCanvas`, `renderIllustratedDiagram`) + explanation panel (`openExplanation`, `renderExplanation`) | 2100 |
+| 11 | The 7 laboratories + Predict + Builder + Challenges (each a `Views.<name>` object) | 2638–5578 |
+| 12 | Training-trace engine + Training Simulator view (`Views.train`, `lineChart`, `renderLearningRateLandscape`, `renderDatasetEvaluationSection`) | 3746 |
+| 13 | Drawing / preprocessing (`preprocessDrawing`, bounding box → crop → resize → center-of-mass centering → normalize) | 5162 |
+| 14 | Inference engine + embedded weights (`NN.*` pure-JS ops, `decodeEmbeddedWeights`, `ModelWeights`) | 4133 |
+| 15 | PyTorch code generator (`CodeGen`, `buildFullPySource`, clickable-token highlighting) | 5579 |
+| 16 | Persistence (`Persistence.save/load/clearAll/exportProject/importProject`) | 1878 |
+| 17 | Accessibility helpers (`A11y`, DOM helpers `el`/`clearNode`, toasts) | 2000 |
+| 17b | Sound (`Sound.playTone`/`correct`/`incorrect`/`achievement`/`predictDone` — Web Audio API, synthesized, muted by default) | 2020 |
+| 18 | View router (`Views`, `Router.goToView`) + Settings dialog + top-nav/startup event binding | 2638, 6254 |
+| 19 | Internal self-tests (`SelfTest.run`, exposed as `window.CNNLabSelfTest`) — 20/20 passing | 6137 |
+| 20 | Application bootstrap (`bootstrap()`, wired to `DOMContentLoaded`) | 6429 |
 
 ### Key objects, at a glance
 

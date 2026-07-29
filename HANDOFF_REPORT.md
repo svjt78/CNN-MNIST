@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-25
 **Runtime artifact:** [`cnn-learning-lab.html`](cnn-learning-lab.html)
-**Size:** 2.7 MB (well under the ~8 MB target) — a single self-contained HTML file with no adjacent runtime files.
+**Size:** 2.74 MB (well under the ~8 MB target) — a single self-contained HTML file with no adjacent runtime files.
 
 ---
 
@@ -15,7 +15,7 @@
 ## 2. What was implemented
 
 - **Canonical CNN engine**: full layer model (input → normalization → 4×(conv+BN+ReLU) with two max-pools → flatten → linear(3136→128) → ReLU → dropout(0.3) → linear(128→10)), shape/parameter propagation, an architecture validator, and canonical reset. A startup self-test asserts the total is exactly **468,010** trainable parameters, computed from the layers (not hard-coded).
-- **Universal concept registry**: 74 concepts — every one required by the functional specification (§9.2) and the master prompt (§7) — each with quick/explore/deep-dive depth, analogy, worked example, formula, PyTorch snippet, common mistake, training-vs-inference behavior, and related concepts. Explanations pull **live numbers** from the current architecture state rather than only static text.
+- **Universal concept registry**: 76 concepts — every one required by the functional specification (§9.2) and the master prompt (§7), plus a couple extra — each with quick/explore/deep-dive depth, analogy, worked example, formula, PyTorch snippet, common mistake, training-vs-inference behavior, and related concepts. Explanations pull **live numbers** from the current architecture state rather than only static text.
 - **7 interactive laboratories**:
   - Pixel & normalization (paint/erase, brush size, row/col/raw/scaled/normalized inspection, normalization toggle)
   - Convolution (5×5 teaching grid, filter presets + custom kernel, manual/auto stepping, stride/padding/bias, feature-map framing)
@@ -173,3 +173,5 @@ own test's assumptions): the conv-stage invalid-state check only inspected the C
 layer's own validity, not its paired BatchNorm's, which meant the specific mismatch
 produced by the repair challenge (a valid conv followed by a now-mismatched
 batch-norm) wouldn't have shown as invalid in the new diagram. Fixed to check both.
+
+Final file size: 2.74 MB (pure code addition — no new embedded binary/base64 data).
