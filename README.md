@@ -57,6 +57,16 @@ Flatten/Dense, Dropout, Train, Predict, Code, Builder, Challenges, Glossary) sit
 below a persistent **architecture canvas** that always shows the full CNN, its shapes,
 its parameter counts, and whether it's currently valid.
 
+The architecture canvas itself has three view modes (tabs above the diagram):
+**Forward path** (the default boxed-layer strip), **Learning loop** (loss →
+backprop → optimizer, shown separately from the forward path on purpose), and
+**Illustrated Diagram** — a "textbook-style" illustration (offset/stacked
+rectangles per conv layer suggesting channel depth, a slanted "Flattened"
+bridge, and a node-and-edge graph for the dense layers with red 0–9 output
+circles) built entirely from whichever architecture is currently active, so it
+always matches — never a separate static picture. Every part of it is
+clickable/keyboard-operable and opens the same universal explanation panel.
+
 - **Builder**: add/remove/reorder/configure layers — drag a row by its ⠿ handle, or use
   the ↑/↓ buttons (both work; buttons are the accessible fallback) — plus undo/redo,
   "Restore canonical CNN," and the same repair challenge from the Mission.
@@ -106,9 +116,9 @@ else. Internally it's split into 20 labeled regions (search the file for `REGION
 | 4 | Concept registry (`CONCEPTS`, `CONCEPT_INDEX`, `getConcept`) — all 74 required concepts | 616 |
 | 5 | Canonical architecture definition (`buildCanonicalLayers`, `CANONICAL_TOTAL_PARAMETERS`) | 1364 |
 | 6 | State store (`AppState`, `defaultState`, undo/redo, mission/playground separation) | 1651 |
-| 7 / 8 | Shape & parameter engine + validator (`Engine.propagateLayer`, `Engine.propagateArchitecture`, `Engine.repairFlattenDenseMismatch`) | 1444 |
+| 7 / 8 | Shape & parameter engine + validator (`Engine.propagateLayer`, `Engine.propagateArchitecture`, `Engine.repairFlattenDenseMismatch`, `Engine.groupStages` for the Illustrated Diagram) | 1444 |
 | 9 | Guided Mission controller (`MISSION_CONTENT`, `renderMissionBody`, incremental reveal, repair challenge) | 5322 |
-| 10 | Rendering helpers: architecture canvas (`renderArchitectureCanvas`) + explanation panel (`openExplanation`, `renderExplanation`) | 1945 |
+| 10 | Rendering helpers: architecture canvas (`renderArchitectureCanvas`, `renderIllustratedDiagram`) + explanation panel (`openExplanation`, `renderExplanation`) | 1945 |
 | 11 | The 7 laboratories + Predict + Builder + Challenges (each a `Views.<name>` object) | 2335–4980 |
 | 12 | Training-trace engine + Training Simulator view (`Views.train`, `lineChart`, `renderLearningRateLandscape`, `renderDatasetEvaluationSection`) | 3296 |
 | 13 | Drawing / preprocessing (`preprocessDrawing`, bounding box → crop → resize → center-of-mass centering → normalize) | 4586 |

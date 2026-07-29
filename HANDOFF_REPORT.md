@@ -136,3 +136,40 @@ property assignment — they now work correctly from first render too, not by ac
   Model Provenance downloads fire; sound setting off by default and persists across
   reload; zero console/page errors; zero external requests.
 - Final file size: 2.72 MB (grew ~33 KB from the new embedded data/scripts).
+
+---
+
+## 9. New feature: Illustrated Diagram view (2026-07-28)
+
+Added a third architecture-canvas view mode — "Illustrated Diagram" — alongside the
+existing "Forward path" and "Learning loop" tabs, per a reference image the user
+shared (a classic textbook-style CNN illustration: stacked/offset rectangles per conv
+layer suggesting channel depth, a slanted "Flattened" bridge, and a node-and-edge
+graph for the dense layers with red 0–9 output circles). The existing Forward-path box
+strip was explicitly required to stay unchanged — verified byte-for-byte identical
+before/after (same 22 `.layer-node` elements, same rendering code path untouched).
+
+Built entirely from whichever architecture is currently active (`getActiveLayers()`,
+the same source the existing strip uses) via a new shared `Engine.groupStages(layers)`
+utility that collapses Conv+BatchNorm+ReLU(+Pool) groups into "stages" — mirroring the
+grouping logic `CodeGen.modelLines` already used, extracted once rather than
+re-implemented a third time. Every stage is a focusable, clickable SVG group that both
+selects/highlights the layer (syncing the Code tab, same as the existing strip) and
+opens the universal explanation panel for its concept, with a visible "selected"
+outline and red invalid-state borders when the architecture is broken. The diagram
+updates live: editing channels in the Builder, or loading the flatten/dense repair
+challenge, is reflected immediately (verified end-to-end, including that the invalid
+styling correctly appears on the specific stage whose batch-norm — not necessarily its
+convolution — became mismatched).
+
+Verified: 20/20 self-tests (one new check on `Engine.groupStages`'s canonical
+grouping); real-Chrome checks in both dark and light color-scheme emulation
+(screenshots), click-to-explain and keyboard (Tab+Enter) operability, live updates on
+architecture edits, no horizontal overflow at a 390px viewport, and the full existing
+regression suite (browser/offline/contrast/reset checks) still green.
+
+One real bug found and fixed along the way (not by the reviewer — by re-checking my
+own test's assumptions): the conv-stage invalid-state check only inspected the Conv
+layer's own validity, not its paired BatchNorm's, which meant the specific mismatch
+produced by the repair challenge (a valid conv followed by a now-mismatched
+batch-norm) wouldn't have shown as invalid in the new diagram. Fixed to check both.

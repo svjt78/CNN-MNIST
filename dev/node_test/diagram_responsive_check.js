@@ -1,0 +1,20 @@
+const path = require("path");
+const { chromium } = require("playwright-core");
+const CHROME_PATH = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const htmlPath = path.resolve(__dirname, "../../cnn-learning-lab.html");
+(async () => {
+  const browser = await chromium.launch({ executablePath: CHROME_PATH, headless: true });
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  await page.goto("file://" + htmlPath, { waitUntil: "load" });
+  await page.waitForTimeout(300);
+  await page.click("#btnOpenPlaygroundStartup");
+  await page.waitForTimeout(150);
+  await page.click('#pathTabs button[data-path="diagram"]');
+  await page.waitForTimeout(200);
+  const scrollWidth = await page.evaluate(() => document.body.scrollWidth);
+  const clientWidth = await page.evaluate(() => document.documentElement.clientWidth);
+  console.log("At 390px viewport with Illustrated Diagram active: body.scrollWidth =", scrollWidth, " clientWidth =", clientWidth);
+  console.log("No page-level horizontal overflow:", scrollWidth <= clientWidth);
+  await browser.close();
+  process.exitCode = scrollWidth <= clientWidth ? 0 : 1;
+})();

@@ -38,8 +38,21 @@ application — the shipped HTML file is fully self-contained.
     reduced motion, and narrow-viewport layout (no horizontal page scroll).
   - `offline_check.js` — same, but with the browser context's network fully
     disabled, to prove no external resource is ever requested.
-  - `overflow_diag.js` — one-off diagnostic used while fixing a responsive
-    layout bug.
+  - `contrast_check.js` — computes real color-vs-background contrast ratios for
+    every select/input across the main views, in both dark and light
+    color-scheme emulation (guards against the invisible-text bug once found).
+  - `reset_check.js` — runs training to completion, draws and predicts a digit,
+    resets the Playground, then verifies every lab actually reverted to fresh
+    (guards against per-lab state surviving a reset).
+  - `diagram_check.js` — screenshots and functionally verifies the Illustrated
+    Diagram view mode: expected SVG element counts, click-to-explain, the
+    "selected" highlight, live updates when the architecture is edited (incl.
+    the invalid-state border), keyboard operability, and that the existing
+    Forward-path box strip is untouched.
+  - `diagram_responsive_check.js` — confirms the Illustrated Diagram's wider
+    SVG doesn't cause whole-page horizontal scroll at a 390px viewport.
+  - `light_mode_check.js` / `overflow_diag.js` — one-off diagnostics used while
+    fixing the invisible-form-control and responsive-overflow bugs.
 
 To rebuild after changing the model or architecture:
 

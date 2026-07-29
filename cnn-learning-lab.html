@@ -279,6 +279,12 @@ table.datatable th{ background:var(--color-surface-alt); }
 .layer-node .lshape{ font-size:0.68rem; color:var(--color-text-faint); font-family:var(--font-mono); }
 .layer-connector{ flex:0 0 auto; width:22px; display:flex; align-items:center; justify-content:center; color:var(--color-text-faint); font-size:1.1rem; align-self:center; }
 
+/* Illustrated Diagram (third architecture view mode) */
+#archStrip svg{ display:block; }
+#archStrip svg text{ font-family: var(--font-sans); }
+.diagram-group{ cursor:pointer; }
+.diagram-group:focus-visible{ outline: var(--focus-ring); outline-offset:3px; }
+
 .pixel-grid-wrap{ display:inline-block; }
 .pixel-cell{ stroke: rgba(0,0,0,0.08); }
 .pixel-cell.selected{ stroke: var(--color-data); stroke-width:2px; }
@@ -398,9 +404,10 @@ label.field-label{ display:block; font-size:0.8rem; font-weight:700; color:var(-
           <span class="badge badge-data" id="archValidityBadge">Valid</span>
         </div>
         <div class="hstack">
-          <div class="view-tabs" id="pathTabs" role="tablist" aria-label="Forward path or learning loop">
+          <div class="view-tabs" id="pathTabs" role="tablist" aria-label="Forward path, learning loop, or illustrated diagram">
             <button role="tab" aria-selected="true" data-path="forward">Forward path</button>
             <button role="tab" aria-selected="false" data-path="learning">Learning loop</button>
+            <button role="tab" aria-selected="false" data-path="diagram">Illustrated Diagram</button>
           </div>
           <button class="btn btn-sm" id="btnModeTrainInfer" title="Toggle training/inference behavior display">Mode: Inference</button>
         </div>
@@ -1636,6 +1643,31 @@ Engine.propagateArchitecture = function(layers){
   };
 };
 
+// Groups a layer array into visual "stages" for higher-level diagrams: consecutive
+// Conv+BatchNorm+ReLU(+optional Pool) triples collapse into one {kind:"conv"} stage;
+// every other layer (input, normalize, flatten, linear, dropout, standalone relu,
+// output) becomes its own {kind:"other"} entry. Order is preserved. This mirrors the
+// same Conv+BN+ReLU detection CodeGen.modelLines already uses, extracted once here so
+// any other view needing "stage" granularity (rather than per-layer granularity)
+// doesn't have to reimplement the grouping.
+Engine.groupStages = function(layers){
+  var stages = [];
+  var i = 0;
+  while (i < layers.length){
+    var l = layers[i];
+    if (l.type===LAYER_KIND.CONV && layers[i+1] && layers[i+1].type===LAYER_KIND.BATCHNORM && layers[i+2] && layers[i+2].type===LAYER_KIND.RELU){
+      var stage = { kind:"conv", conv:l, bn:layers[i+1], relu:layers[i+2], pool:null };
+      i += 3;
+      if (layers[i] && layers[i].type===LAYER_KIND.POOL){ stage.pool = layers[i]; i += 1; }
+      stages.push(stage);
+      continue;
+    }
+    stages.push({ kind:"other", layer:l });
+    i += 1;
+  }
+  return stages;
+};
+
 Engine.cloneLayers = function(layers){
   return layers.map(function(l){
     return {
@@ -2112,24 +2144,9 @@ function renderArchitectureCanvas(){
   var summary = Engine.propagateArchitecture(layers);
   var trainMode = AppState.runtime.trainInferToggle === "training";
 
-  layers.forEach(function(layer, i){
-    if (i>0) strip.appendChild(el("div",{class:"layer-connector","aria-hidden":"true"},["→"]));
-    var classes = "layer-node" + (layer.valid ? "" : " invalid") + (AppState.runtime.selectedLayerId===layer.id ? " selected" : "");
-    var stateNote = "";
-    if (layer.type===LAYER_KIND.DROPOUT){ stateNote = trainMode ? "Active (~"+Math.round(layer.config.p*100)+"% off)" : "Inactive (all on)"; }
-    if (layer.type===LAYER_KIND.BATCHNORM){ stateNote = trainMode ? "Using batch stats" : "Using running stats"; }
-    var node = el("button", { class:classes, type:"button", "data-kind":layer.type,
-      "aria-pressed": AppState.runtime.selectedLayerId===layer.id ? "true":"false",
-      "aria-label": layer.displayName + (layer.valid ? "" : " — invalid") ,
-      onClick:function(){ selectLayer(layer.id); } }, [
-      el("div", { class:"lname" }, [layer.displayName]),
-      el("div", { class:"lchild" }, [layer.childFriendlyName]),
-      el("div", { class:"lshape" }, [shapeLabel(layer.outputShape)]),
-      layer.trainableParameters ? el("div",{class:"tiny"},[layer.trainableParameters.toLocaleString()+" params"]) : null,
-      stateNote ? el("div",{class:"tiny", style:trainMode?"":""},[stateNote]) : null
-    ]);
-    strip.appendChild(node);
-
+  // Screen-reader text alternative: identical regardless of which visual mode
+  // (box strip vs. illustrated diagram) is currently selected.
+  layers.forEach(function(layer){
     var row = el("tr",{},[
       el("td",{},[layer.displayName]), el("td",{},[layer.type]),
       el("td",{},[shapeLabel(layer.inputShape)]), el("td",{},[shapeLabel(layer.outputShape)]),
@@ -2137,6 +2154,29 @@ function renderArchitectureCanvas(){
     ]);
     textTableBody.appendChild(row);
   });
+
+  if (AppState.runtime.pathView === "diagram"){
+    renderIllustratedDiagram(strip, layers, trainMode);
+  } else {
+    layers.forEach(function(layer, i){
+      if (i>0) strip.appendChild(el("div",{class:"layer-connector","aria-hidden":"true"},["→"]));
+      var classes = "layer-node" + (layer.valid ? "" : " invalid") + (AppState.runtime.selectedLayerId===layer.id ? " selected" : "");
+      var stateNote = "";
+      if (layer.type===LAYER_KIND.DROPOUT){ stateNote = trainMode ? "Active (~"+Math.round(layer.config.p*100)+"% off)" : "Inactive (all on)"; }
+      if (layer.type===LAYER_KIND.BATCHNORM){ stateNote = trainMode ? "Using batch stats" : "Using running stats"; }
+      var node = el("button", { class:classes, type:"button", "data-kind":layer.type,
+        "aria-pressed": AppState.runtime.selectedLayerId===layer.id ? "true":"false",
+        "aria-label": layer.displayName + (layer.valid ? "" : " — invalid") ,
+        onClick:function(){ selectLayer(layer.id); } }, [
+        el("div", { class:"lname" }, [layer.displayName]),
+        el("div", { class:"lchild" }, [layer.childFriendlyName]),
+        el("div", { class:"lshape" }, [shapeLabel(layer.outputShape)]),
+        layer.trainableParameters ? el("div",{class:"tiny"},[layer.trainableParameters.toLocaleString()+" params"]) : null,
+        stateNote ? el("div",{class:"tiny", style:trainMode?"":""},[stateNote]) : null
+      ]);
+      strip.appendChild(node);
+    });
+  }
 
   if (summary.valid){
     badge.className = "badge badge-good";
@@ -2167,6 +2207,264 @@ function renderArchitectureCanvas(){
   rows.forEach(function(r){ summaryBox.appendChild(r); });
 
   updateActionAvailability(summary.valid);
+}
+
+/* =========================================================================
+   ILLUSTRATED DIAGRAM — "textbook-style" CNN illustration (additive third view
+   mode alongside the forward-path box strip and the learning-loop view). Built
+   entirely from the CURRENT architecture (canonical or Playground-edited), using
+   the same Engine.groupStages() grouping CodeGen relies on, so it always matches
+   whatever is live — never a separate hard-coded picture.
+   ========================================================================= */
+var SVG_NS = "http://www.w3.org/2000/svg";
+function svgEl(tag, attrs){
+  var n = document.createElementNS(SVG_NS, tag);
+  Object.keys(attrs||{}).forEach(function(k){ n.setAttribute(k, attrs[k]); });
+  return n;
+}
+function svgText(x, y, str, attrs){
+  var t = svgEl("text", Object.assign({ x:x, y:y }, attrs||{}));
+  t.textContent = str;
+  return t;
+}
+function currentInputPixels(){
+  if (AppState.playground.pixelGrid && AppState.playground.pixelGrid.length===784) return AppState.playground.pixelGrid;
+  if (EDU.samples.length) return EDU.samples[0].pixels;
+  return null;
+}
+// Collects "ReLU activation" / "with dropout" annotations that trail a linear stage,
+// by looking ahead until the next linear stage or conv stage in the stage list.
+function collectLinearAnnotations(stages, fromIndex){
+  var notes = { relu:false, dropout:false, dropoutP:null };
+  for (var j=fromIndex+1; j<stages.length; j++){
+    var s = stages[j];
+    if (s.kind==="conv") break;
+    if (s.layer.type===LAYER_KIND.LINEAR) break;
+    if (s.layer.type===LAYER_KIND.RELU) notes.relu = true;
+    if (s.layer.type===LAYER_KIND.DROPOUT){ notes.dropout = true; notes.dropoutP = s.layer.config.p; }
+  }
+  return notes;
+}
+// Makes an SVG <g> that behaves like a button: focusable, clickable, Enter/Space-able.
+// Each diagram stage is both selectable (like the existing box-strip: highlights it and
+// syncs the Code tab) AND opens the universal explanation panel for its concept — the
+// diagram is meant to be a richer, more explicitly click-to-explain view than the plain
+// forward-path strip, per the agreed design for this new view mode.
+function makeDiagramGroup(layer, ariaLabel){
+  var conceptId = CONCEPT_FOR_KIND[layer.type];
+  function activate(){ selectLayer(layer.id); if (conceptId) openExplanation(conceptId); }
+  var g = svgEl("g", { class:"diagram-group", tabindex:"0", role:"button", "aria-label":ariaLabel+" — click for an explanation" });
+  g.addEventListener("click", activate);
+  g.addEventListener("keydown", function(e){
+    if (e.key==="Enter" || e.key===" "){ e.preventDefault(); activate(); }
+  });
+  return g;
+}
+
+function renderIllustratedDiagram(container, layers, trainMode){
+  var stages = Engine.groupStages(layers);
+  var H = 380, padY = 40;
+  var midY = H/2;
+  var svg = svgEl("svg", { height:H, role:"img",
+    "aria-label":"Illustrated diagram of the current CNN architecture — click any part for an explanation, or use the text table below for a full description." });
+
+  function isSelected(id){ return AppState.runtime.selectedLayerId === id; }
+  var SELECTED_STROKE = "var(--color-data)";
+  var SELECTED_WIDTH = "3.5";
+
+  var x = 20;
+  var GAP = 34;
+
+  function connector(fromX, toX, y){
+    svg.appendChild(svgEl("line", { x1:fromX, y1:y, x2:toX, y2:y, stroke:"var(--color-border-strong)", "stroke-width":"2" }));
+    svg.appendChild(svgEl("polygon", { points:(toX-7)+","+(y-5)+" "+toX+","+y+" "+(toX-7)+","+(y+5), fill:"var(--color-border-strong)" }));
+  }
+
+  var inputCenter = null;
+  var firstConvFace = null;
+
+  // Precompute which linear "other" stage index is the final (output) one.
+  var linearIdxs = [];
+  stages.forEach(function(s, i){ if (s.kind==="other" && s.layer.type===LAYER_KIND.LINEAR) linearIdxs.push(i); });
+  var outputLinearIdx = linearIdxs.length ? linearIdxs[linearIdxs.length-1] : -1;
+  var prevNodeColumn = null; // {x, ys:[...]} of the previously drawn FC column, for edges
+
+  stages.forEach(function(stage, stageIndex){
+    if (stage.kind === "conv"){
+      // A stage is shown invalid if EITHER its conv or its paired batch-norm is invalid
+      // (e.g. a channel-count edit that leaves the conv itself self-consistent but breaks
+      // the batch-norm right after it — exactly what the flatten/dense repair challenge does).
+      var invalidConv = !stage.conv.valid || !stage.bn.valid;
+      var cap = 6;
+      var w = 56, h = 56, dx = 6, dy = -6;
+      var convSelected = isSelected(stage.conv.id);
+      var gConv = makeDiagramGroup(stage.conv, stage.conv.displayName+" — "+shapeLabel(stage.conv.outputShape)+(invalidConv?" — invalid":""));
+      for (var k=cap-1; k>=0; k--){
+        var ox = x + k*dx, oy = midY - h/2 - k*dy;
+        var isFront = k===0;
+        gConv.appendChild(svgEl("rect", {
+          x:ox, y:oy, width:w, height:h, rx:4,
+          fill: isFront ? "var(--color-learnable-bg)" : "var(--color-surface)",
+          stroke: invalidConv ? "var(--color-invalid)" : (isFront && convSelected ? SELECTED_STROKE : "var(--color-learnable)"),
+          "stroke-width": isFront ? (convSelected ? SELECTED_WIDTH : "2.5") : "1.5",
+          "fill-opacity": isFront ? "1" : (0.35 + 0.1*(cap-k))
+        }));
+      }
+      svg.appendChild(gConv);
+      if (!firstConvFace){ firstConvFace = { x:x, y:midY }; }
+      svg.appendChild(svgText(x, midY-h/2-6*(cap-1)-34, stage.conv.displayName, {"font-size":"12","font-weight":"700", fill:"var(--color-text)"}));
+      svg.appendChild(svgText(x, midY-h/2-6*(cap-1)-20, stage.conv.config.kernel+"×"+stage.conv.config.kernel+" kernel, padding "+stage.conv.config.padding, {"font-size":"10", fill:"var(--color-text-faint)"}));
+      svg.appendChild(svgText(x, midY+h/2+6*(cap-1)+22, stage.conv.config.outChannels+" channels", {"font-size":"10", "font-weight":"600", fill:"var(--color-text-muted)"}));
+      svg.appendChild(svgText(x, midY+h/2+6*(cap-1)+36, "("+shapeLabel(stage.relu.outputShape)+")", {"font-size":"10", fill:"var(--color-text-faint)"}));
+
+      var stackRightEdge = x + w + (cap-1)*dx;
+      x = stackRightEdge + GAP;
+
+      if (stage.pool){
+        var invalidPool = !stage.pool.valid;
+        var pw = 34, ph = 34, pdx = 5, pdy = -5;
+        var poolSelected = isSelected(stage.pool.id);
+        connector(stackRightEdge, x, midY);
+        var gPool = makeDiagramGroup(stage.pool, stage.pool.displayName+" — "+shapeLabel(stage.pool.outputShape));
+        for (var pk=cap-1; pk>=0; pk--){
+          var pox = x + pk*pdx, poy = midY - ph/2 - pk*pdy;
+          var pFront = pk===0;
+          gPool.appendChild(svgEl("rect", {
+            x:pox, y:poy, width:pw, height:ph, rx:3,
+            fill: pFront ? "var(--color-inactive-bg)" : "var(--color-surface)",
+            stroke: invalidPool ? "var(--color-invalid)" : (pFront && poolSelected ? SELECTED_STROKE : "var(--color-inactive)"),
+            "stroke-width": pFront ? (poolSelected ? SELECTED_WIDTH : "2.5") : "1.5",
+            "fill-opacity": pFront ? "1" : (0.35 + 0.1*(cap-pk))
+          }));
+        }
+        svg.appendChild(gPool);
+        svg.appendChild(svgText(x, midY-ph/2-6*(cap-1)-20, "MaxPool "+stage.pool.config.kernel+"×"+stage.pool.config.kernel, {"font-size":"11","font-weight":"700", fill:"var(--color-text)"}));
+        svg.appendChild(svgText(x, midY+ph/2+6*(cap-1)+22, "("+shapeLabel(stage.pool.outputShape)+")", {"font-size":"10", fill:"var(--color-text-faint)"}));
+        var poolRightEdge = x + pw + (cap-1)*pdx;
+        x = poolRightEdge + GAP;
+      } else {
+        // no pool after this conv stage; leave x as-is (already advanced)
+      }
+
+    } else {
+      var layer = stage.layer;
+
+      if (layer.type === LAYER_KIND.INPUT){
+        var size = 64;
+        var pixels = currentInputPixels();
+        var gInput = makeDiagramGroup(layer, "Input image — "+shapeLabel(layer.outputShape));
+        gInput.appendChild(svgEl("rect", { x:x, y:midY-size/2, width:size, height:size, rx:4, fill:"#000",
+          stroke: isSelected(layer.id) ? SELECTED_STROKE : "var(--color-data)", "stroke-width": isSelected(layer.id) ? SELECTED_WIDTH : "2.5" }));
+        if (pixels){
+          var fo = svgEl("foreignObject", { x:x+2, y:midY-size/2+2, width:size-4, height:size-4 });
+          var canvasEl = miniDigitCanvas(pixels, size-4);
+          canvasEl.style.borderRadius = "2px";
+          fo.appendChild(canvasEl);
+          gInput.appendChild(fo);
+        }
+        svg.appendChild(gInput);
+        svg.appendChild(svgText(x, midY-size/2-14, "INPUT", {"font-size":"12","font-weight":"700", fill:"var(--color-text)"}));
+        svg.appendChild(svgText(x, midY+size/2+18, "("+shapeLabel(layer.outputShape)+")", {"font-size":"10", fill:"var(--color-text-faint)"}));
+        inputCenter = { x:x+size/2, y:midY };
+        x += size + GAP;
+      }
+
+      else if (layer.type === LAYER_KIND.NORMALIZE){
+        connector(x-GAP, x+40, midY);
+        var gNorm = makeDiagramGroup(layer, layer.displayName);
+        gNorm.appendChild(svgEl("rect", { x:x, y:midY-18, width:44, height:36, rx:4, fill:"var(--color-data-bg)",
+          stroke: isSelected(layer.id) ? SELECTED_STROKE : "var(--color-data)", "stroke-width": isSelected(layer.id) ? SELECTED_WIDTH : "1.5" }));
+        svg.appendChild(gNorm);
+        svg.appendChild(svgText(x+20, midY+4, "norm", { "font-size":"9", "text-anchor":"middle", fill:"var(--color-data)" }));
+        x += 40 + GAP;
+      }
+
+      else if (layer.type === LAYER_KIND.FLATTEN){
+        connector(x-GAP, x, midY);
+        var fw = 30, fh = 90, skew = 16;
+        var pts = [ (x+skew)+","+(midY-fh/2), (x+fw+skew)+","+(midY-fh/2), (x+fw-skew)+","+(midY+fh/2), (x-skew)+","+(midY+fh/2) ].join(" ");
+        var gFlat = makeDiagramGroup(layer, "Flatten — "+shapeLabel(layer.outputShape));
+        gFlat.appendChild(svgEl("polygon", { points:pts, fill:"var(--color-inactive-bg)",
+          stroke: isSelected(layer.id) ? SELECTED_STROKE : "var(--color-inactive)", "stroke-width": isSelected(layer.id) ? SELECTED_WIDTH : "1.5" }));
+        gFlat.appendChild(svgText(x+fw/2, midY, "Flattened", { "font-size":"10","font-weight":"700", "text-anchor":"middle", fill:"var(--color-text)", transform:"rotate(-70 "+(x+fw/2)+" "+midY+")" }));
+        svg.appendChild(gFlat);
+        svg.appendChild(svgText(x, midY+fh/2+18, "("+shapeLabel(layer.outputShape)+")", {"font-size":"10", fill:"var(--color-text-faint)"}));
+        x += fw + skew + GAP;
+      }
+
+      else if (layer.type === LAYER_KIND.LINEAR){
+        var isOutput = stageIndex === outputLinearIdx;
+        var units = layer.config.outFeatures;
+        var cap2 = Math.min(units, isOutput ? Math.min(units,12) : 7);
+        var colH = 220, spacing = colH/(cap2+1);
+        var colX = x + 14;
+        connector(x-GAP, x, midY);
+        var notes = collectLinearAnnotations(stages, stageIndex);
+        var fcNum = linearIdxs.indexOf(stageIndex) + 3; // fc_3, fc_4, ... — matches the reference diagram's naming
+        var ys = [];
+        var gCol = makeDiagramGroup(layer, layer.displayName+" — "+shapeLabel(layer.outputShape));
+        var colSelected = isSelected(layer.id);
+        if (colSelected){
+          gCol.appendChild(svgEl("rect", { x:colX-(isOutput?11:9)-6, y:midY-colH/2-4, width:(isOutput?11:9)*2+12, height:colH+8, rx:8,
+            fill:"none", stroke:SELECTED_STROKE, "stroke-width":SELECTED_WIDTH }));
+        }
+        var showEllipsis = units > cap2;
+        var drawCount = showEllipsis ? cap2-1 : cap2;
+        for (var n=0; n<drawCount; n++){
+          var ny = midY - colH/2 + spacing*(n+1);
+          ys.push(ny);
+          gCol.appendChild(svgEl("circle", { cx:colX, cy:ny, r: isOutput?11:9,
+            fill: isOutput ? "var(--color-invalid)" : "var(--color-good)",
+            stroke: layer.valid ? "var(--color-border-strong)" : "var(--color-invalid)", "stroke-width":"1.5" }));
+          if (isOutput){
+            gCol.appendChild(svgText(colX+22, ny+4, String(n), {"font-size":"12","font-weight":"700", fill:"var(--color-text)"}));
+          }
+        }
+        if (showEllipsis){
+          var ellipsisY = midY - colH/2 + spacing*cap2;
+          gCol.appendChild(svgText(colX, ellipsisY+4, "⋮", {"font-size":"16","text-anchor":"middle", fill:"var(--color-text-faint)"}));
+          ys.push(ellipsisY);
+        }
+        svg.appendChild(gCol);
+
+        // Edges from previous node column (or a single point, e.g. flatten/input) to this one.
+        if (prevNodeColumn){
+          prevNodeColumn.ys.forEach(function(y1){
+            ys.forEach(function(y2){
+              svg.appendChild(svgEl("line", { x1:prevNodeColumn.x, y1:y1, x2:colX, y2:y2, stroke:"var(--color-border)", "stroke-width":"0.75", opacity:"0.6" }));
+            });
+          });
+        }
+
+        var labelY = midY - colH/2 - 12;
+        svg.appendChild(svgText(colX-14, labelY-28, "fc_"+fcNum, {"font-size":"11","font-weight":"700", fill:"var(--color-text)"}));
+        svg.appendChild(svgText(colX-14, labelY-14, "Fully-Connected", {"font-size":"10", fill:"var(--color-text-muted)"}));
+        var noteLines = [];
+        if (notes.relu) noteLines.push("ReLU activation");
+        if (notes.dropout) noteLines.push("Dropout "+Math.round(notes.dropoutP*100)+"%"+(trainMode?" (active)":" (inactive)"));
+        noteLines.forEach(function(line, li){
+          svg.appendChild(svgText(colX-14, labelY+li*11, line, {"font-size":"9", fill:"var(--color-caution)"}));
+        });
+        svg.appendChild(svgText(colX-14, midY+colH/2+22, units.toLocaleString()+" units"+(isOutput?" (output)":""), {"font-size":"10", fill:"var(--color-text-faint)"}));
+
+        prevNodeColumn = { x:colX, ys:ys };
+        x = colX + 40 + GAP;
+      }
+      // RELU/DROPOUT/OUTPUT "other" entries carry no separate geometry — RELU/DROPOUT
+      // are folded into the preceding linear column's annotations (collectLinearAnnotations
+      // above), and OUTPUT is just the marker for the final linear column already drawn.
+    }
+  });
+
+  if (inputCenter && firstConvFace){
+    svg.appendChild(svgEl("line", {
+      x1:inputCenter.x, y1:inputCenter.y-10, x2:firstConvFace.x+6, y2:firstConvFace.y-6,
+      stroke:"var(--color-text-faint)", "stroke-width":"1.25", "stroke-dasharray":"3,3"
+    }));
+  }
+
+  svg.setAttribute("width", x + 10);
+  container.appendChild(svg);
 }
 
 function selectLayer(layerId){
@@ -5922,6 +6220,13 @@ SelfTest.run = function(){
   } else {
     check("JS inference validated against PyTorch reference logits", false, "Skipped — embedded weights or samples unavailable.");
   }
+
+  check("Engine.groupStages groups the canonical architecture into 4 conv stages (pool on 2nd/4th) + 2 linear stages", (function(){
+    var stages = Engine.groupStages(canon.layers);
+    var convStages = stages.filter(function(s){ return s.kind==="conv"; });
+    var linearStages = stages.filter(function(s){ return s.kind==="other" && s.layer.type===LAYER_KIND.LINEAR; });
+    return convStages.length===4 && !convStages[0].pool && !!convStages[1].pool && !convStages[2].pool && !!convStages[3].pool && linearStages.length===2;
+  })());
 
   check("Confusion matrix is a real 10×10 table summing to 10,000", (function(){
     var m = EDU.confusionMatrix;
