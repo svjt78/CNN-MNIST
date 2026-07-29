@@ -175,3 +175,38 @@ produced by the repair challenge (a valid conv followed by a now-mismatched
 batch-norm) wouldn't have shown as invalid in the new diagram. Fixed to check both.
 
 Final file size: 2.74 MB (pure code addition — no new embedded binary/base64 data).
+
+---
+
+## 10. Weights & biases made explicit in the Illustrated Diagram (2026-07-29)
+
+The user pointed out that the Illustrated Diagram showed channel counts and shapes but
+never distinguished **weights** from **biases** — a real pedagogical gap, since e.g.
+the canonical conv layers deliberately use `bias=False` (batch norm already re-centers
+the output) while the dense layers do have biases, and that distinction is exactly the
+kind of thing this app is supposed to make concrete rather than gloss over.
+
+Added, under every learnable stage (each conv and each dense/linear layer):
+- **Weights** — the real computed count and its shape factorization, e.g.
+  `Weights: 9,216 (32×32×3×3)` for a conv layer, `Weights: 401,408` / `(3,136×128)`
+  for a dense layer. Computed directly from the layer's own config
+  (`outChannels×inChannels×kernel×kernel`, or `inFeatures×outFeatures`) — the same
+  arithmetic the shape/parameter engine already does elsewhere, not a new estimate.
+- **Bias** — `Bias: none (bias=False)` for the canonical conv layers, or the real
+  count (`Biases: 128`, `Biases: 10`) for the dense layers, which do have bias enabled.
+
+Both labels are individually clickable/keyboard-operable and open the `weight` / `bias`
+concept explanations directly — they're distinct, explicitly-requested "important
+learning concepts," not just decoration on the parent layer's label.
+
+Found and fixed a real layout bug while verifying visually (not something the text-only
+Playwright checks would have caught): the new labels are wider than the original
+spacing between stages, and initially overlapped each other. Fixed by widening the
+inter-stage gap and center-anchoring the new labels under each stack/column, verified
+via fresh screenshots at both the initial scroll position and scrolled to the
+fully-connected layers.
+
+Verified: syntax check, 20/20 self-tests, full real-Chrome regression suite
+(browser/offline/contrast/reset/responsive checks) all still green, plus a targeted
+visual re-check confirming no more label overlap in either the conv-stack section or
+the dense-layer section.

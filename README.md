@@ -64,8 +64,13 @@ backprop → optimizer, shown separately from the forward path on purpose), and
 rectangles per conv layer suggesting channel depth, a slanted "Flattened"
 bridge, and a node-and-edge graph for the dense layers with red 0–9 output
 circles) built entirely from whichever architecture is currently active, so it
-always matches — never a separate static picture. Every part of it is
-clickable/keyboard-operable and opens the same universal explanation panel.
+always matches — never a separate static picture. Every learnable stage also
+shows its real **weights and biases** breakdown (e.g. "Weights: 288
+(32×1×3×3)" / "Bias: none (bias=False)" for a conv layer whose bias is
+disabled, or "Weights: 401,408" / "Biases: 128" for a dense layer) — the exact
+numbers the shape/parameter engine already computes, not estimates. Every part
+of it, including the weight/bias labels themselves, is clickable/keyboard-operable
+and opens the same universal explanation panel.
 
 - **Builder**: add/remove/reorder/configure layers — drag a row by its ⠿ handle, or use
   the ↑/↓ buttons (both work; buttons are the accessible fallback) — plus undo/redo,

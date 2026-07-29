@@ -2261,10 +2261,22 @@ function makeDiagramGroup(layer, ariaLabel){
   return g;
 }
 
+// A small standalone clickable/focusable SVG text label that opens a concept
+// explanation directly (used for the "Weights:"/"Bias:" annotations, since those
+// are their own distinct concepts — weight and bias — worth explaining on their own,
+// not just folded into the parent layer's explanation).
+function svgConceptLabel(x, y, text, conceptId, attrs){
+  var t = svgText(x, y, text, Object.assign({ class:"diagram-group", tabindex:"0", role:"button",
+    "aria-label": text+" — click for an explanation" }, attrs||{}));
+  t.addEventListener("click", function(){ openExplanation(conceptId); });
+  t.addEventListener("keydown", function(e){ if (e.key==="Enter" || e.key===" "){ e.preventDefault(); openExplanation(conceptId); } });
+  return t;
+}
+
 function renderIllustratedDiagram(container, layers, trainMode){
   var stages = Engine.groupStages(layers);
-  var H = 380, padY = 40;
-  var midY = H/2;
+  var H = 440, padY = 40;
+  var midY = H/2 - 10;
   var svg = svgEl("svg", { height:H, role:"img",
     "aria-label":"Illustrated diagram of the current CNN architecture — click any part for an explanation, or use the text table below for a full description." });
 
@@ -2273,7 +2285,7 @@ function renderIllustratedDiagram(container, layers, trainMode){
   var SELECTED_WIDTH = "3.5";
 
   var x = 20;
-  var GAP = 34;
+  var GAP = 78; // wide enough for the "Weights: N (a×b×c×d)" labels below each learnable stage to not collide
 
   function connector(fromX, toX, y){
     svg.appendChild(svgEl("line", { x1:fromX, y1:y, x2:toX, y2:y, stroke:"var(--color-border-strong)", "stroke-width":"2" }));
@@ -2316,6 +2328,19 @@ function renderIllustratedDiagram(container, layers, trainMode){
       svg.appendChild(svgText(x, midY-h/2-6*(cap-1)-20, stage.conv.config.kernel+"×"+stage.conv.config.kernel+" kernel, padding "+stage.conv.config.padding, {"font-size":"10", fill:"var(--color-text-faint)"}));
       svg.appendChild(svgText(x, midY+h/2+6*(cap-1)+22, stage.conv.config.outChannels+" channels", {"font-size":"10", "font-weight":"600", fill:"var(--color-text-muted)"}));
       svg.appendChild(svgText(x, midY+h/2+6*(cap-1)+36, "("+shapeLabel(stage.relu.outputShape)+")", {"font-size":"10", fill:"var(--color-text-faint)"}));
+      (function(){
+        var cfg = stage.conv.config;
+        var weightCount = cfg.outChannels * cfg.inChannels * cfg.kernel * cfg.kernel;
+        var biasCount = cfg.bias ? cfg.outChannels : 0;
+        var baseY = midY+h/2+6*(cap-1)+52;
+        var centerX = x + (w + (cap-1)*dx)/2;
+        svg.appendChild(svgConceptLabel(centerX, baseY,
+          "Weights: "+weightCount.toLocaleString()+" ("+cfg.outChannels+"×"+cfg.inChannels+"×"+cfg.kernel+"×"+cfg.kernel+")",
+          "weight", {"font-size":"9","font-weight":"600", "text-anchor":"middle", fill:"var(--color-learnable)"}));
+        svg.appendChild(svgConceptLabel(centerX, baseY+13,
+          cfg.bias ? ("Bias: "+biasCount.toLocaleString()) : "Bias: none (bias=False)",
+          "bias", {"font-size":"9", "text-anchor":"middle", fill:"var(--color-text-faint)"}));
+      })();
 
       var stackRightEdge = x + w + (cap-1)*dx;
       x = stackRightEdge + GAP;
@@ -2446,6 +2471,21 @@ function renderIllustratedDiagram(container, layers, trainMode){
           svg.appendChild(svgText(colX-14, labelY+li*11, line, {"font-size":"9", fill:"var(--color-caution)"}));
         });
         svg.appendChild(svgText(colX-14, midY+colH/2+22, units.toLocaleString()+" units"+(isOutput?" (output)":""), {"font-size":"10", fill:"var(--color-text-faint)"}));
+        (function(){
+          var inFeatures = layer.config.inFeatures;
+          var weightCount = inFeatures * units;
+          var biasCount = layer.config.bias ? units : 0;
+          var baseY = midY+colH/2+40;
+          svg.appendChild(svgConceptLabel(colX, baseY,
+            "Weights: "+weightCount.toLocaleString(),
+            "weight", {"font-size":"9","font-weight":"600", "text-anchor":"middle", fill:"var(--color-learnable)"}));
+          svg.appendChild(svgConceptLabel(colX, baseY+13,
+            "("+inFeatures.toLocaleString()+"×"+units+")",
+            "weight", {"font-size":"9", "text-anchor":"middle", fill:"var(--color-text-faint)"}));
+          svg.appendChild(svgConceptLabel(colX, baseY+26,
+            layer.config.bias ? ("Biases: "+biasCount.toLocaleString()) : "Bias: none",
+            "bias", {"font-size":"9", "text-anchor":"middle", fill:"var(--color-text-faint)"}));
+        })();
 
         prevNodeColumn = { x:colX, ys:ys };
         x = colX + 40 + GAP;
